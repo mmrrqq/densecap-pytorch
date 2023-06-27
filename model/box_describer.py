@@ -65,6 +65,7 @@ class BoxDescriber(nn.Module):
         if self.fusion_type == 'init_inject':
             _, (h0, c0) = self.rnn(feat_emb.unsqueeze(1), (h0, c0))  # first input projected feat emb to rnn
 
+        cap_lens = cap_lens.cpu()
         rnn_input_pps = pack_padded_sequence(word_emb, lengths=cap_lens, batch_first=True, enforce_sorted=False)
 
         rnn_output_pps, _ = self.rnn(rnn_input_pps, (h0, c0))
@@ -113,6 +114,7 @@ class BoxDescriber(nn.Module):
             predicts[keep, i+1] = pred.log_softmax(dim=-1).argmax(dim=-1)
 
             non_stop = predicts[keep, i+1] != self.special_idx['<eos>']
+            non_stop = non_stop.cpu()
             keep = keep[non_stop]  # update unfinished indices
             if keep.nelement() == 0:  # stop if all finished
                 break

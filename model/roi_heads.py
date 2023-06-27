@@ -59,7 +59,7 @@ def caption_loss(caption_predicts, caption_gt, caption_length):
         assert caption_predicts.shape[0] == caption_gt.shape[0] and caption_predicts.shape[0] == caption_length.shape[0]
 
     # '<bos>' is not considered
-    caption_length = torch.clamp(caption_length-1, min=0)
+    caption_length = torch.clamp(caption_length-1, min=0).cpu()
 
     predict_pps = pack_padded_sequence(caption_predicts, caption_length, batch_first=True, enforce_sorted=False)
 
@@ -120,9 +120,9 @@ class DenseCapRoIHeads(nn.Module):
         labels = []
         for proposals_in_image, gt_boxes_in_image, gt_labels_in_image in zip(proposals, gt_boxes, gt_labels):  # 每张图片循环
 
+            device = proposals_in_image.device
             if gt_boxes_in_image.numel() == 0:
                 # Background image
-                device = proposals_in_image.device
                 clamped_matched_idxs_in_image = torch.zeros(
                     (proposals_in_image.shape[0],), dtype=torch.int64, device=device
                 )
@@ -142,11 +142,11 @@ class DenseCapRoIHeads(nn.Module):
 
                 # Label background (below the low threshold)
                 bg_inds = matched_idxs_in_image == self.proposal_matcher.BELOW_LOW_THRESHOLD
-                labels_in_image[bg_inds] = torch.tensor(0)
+                labels_in_image[bg_inds] = torch.tensor(0, device=device)
 
                 # Label ignore proposals (between low and high thresholds)
                 ignore_inds = matched_idxs_in_image == self.proposal_matcher.BETWEEN_THRESHOLDS
-                labels_in_image[ignore_inds] = torch.tensor(-1)  # -1 is ignored by sampler
+                labels_in_image[ignore_inds] = torch.tensor(-1, device=device)  # -1 is ignored by sampler
 
             matched_idxs.append(clamped_matched_idxs_in_image)
             labels.append(labels_in_image)
@@ -174,7 +174,7 @@ class DenseCapRoIHeads(nn.Module):
 
         gt_boxes = [t["boxes"].to(dtype) for t in targets]
         gt_captions = [t["caps"] for t in targets]
-        gt_captions_length = [t["caps_len"] for t in targets]
+        gt_captions_length = [t["caps_len"].to(device) for t in targets]
         gt_labels = [torch.ones((t["boxes"].shape[0],), dtype=torch.int64, device=device) for t in
                      targets]  # generate labels LongTensor(1)
 
@@ -289,9 +289,11 @@ class DenseCapRoIHeads(nn.Module):
         if targets is not None:
             for t in targets:
                 floating_point_types = (torch.float, torch.double, torch.half)
+                t["caps_len"] = t["caps_len"].cpu()
                 assert t["boxes"].dtype in floating_point_types, 'target boxes must of float type'
                 assert t["caps"].dtype == torch.int64, 'target caps must of int64 (torch.long) type'
                 assert t["caps_len"].dtype == torch.int64, 'target caps_len must of int64 (torch.long) type'
+                assert t["caps_len"].device == torch.device("cpu"), 'target caps_len must be cpu tensor'
 
         if self.training:
             proposals, matched_idxs, caption_gt, caption_length, labels, regression_targets = \

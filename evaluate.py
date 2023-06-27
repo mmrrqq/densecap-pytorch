@@ -1,14 +1,15 @@
 import torch
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from utils.data_loader import DenseCapDataset, DataLoaderPFG
+from utils.data_loader import DenseCapDataset
 from model.evaluator import DenseCapEvaluator
 
 
 def quality_check(model, dataset, idx_to_token, device, max_iter=-1):
 
     model.to(device)
-    data_loader = DataLoaderPFG(dataset, batch_size=1, shuffle=False, num_workers=1,
+    data_loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1,
                                  pin_memory=True, collate_fn=DenseCapDataset.collate_fn)
 
     print('[quality check]')
@@ -45,7 +46,7 @@ def quality_check(model, dataset, idx_to_token, device, max_iter=-1):
 def quantity_check(model, dataset, idx_to_token, device, max_iter=-1, verbose=True):
 
     model.to(device)
-    data_loader = DataLoaderPFG(dataset, batch_size=4, shuffle=False, num_workers=2,
+    data_loader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=2,
                                  pin_memory=True, collate_fn=DenseCapDataset.collate_fn)
 
     evaluator = DenseCapEvaluator(list(model.roi_heads.box_describer.special_idx.keys()))

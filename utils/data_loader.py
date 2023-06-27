@@ -7,21 +7,10 @@ from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from PIL import Image
 from torch.utils.data import DataLoader
-from prefetch_generator import BackgroundGenerator
-
 
 __all__ = [
-    "DataLoaderPFG", "DenseCapDataset", 'DenseCapDatasetV2'
+    "DenseCapDataset", 'DenseCapDatasetV2'
 ]
-
-
-class DataLoaderPFG(DataLoader):
-    """
-    Prefetch version of DataLoader: https://github.com/IgorSusmelj/pytorch-styleguide/issues/5
-    """
-
-    def __iter__(self):
-        return BackgroundGenerator(super().__iter__())
 
 
 class DenseCapDataset(Dataset):
@@ -77,7 +66,9 @@ class DenseCapDataset(Dataset):
 
             vg_idx = self.look_up_tables['split'][self.dataset_type][idx] if self.dataset_type else idx
 
-            img_path = os.path.join(self.img_dir_root, self.look_up_tables['idx_to_directory'][vg_idx],
+            # img_path = os.path.join(self.img_dir_root, self.look_up_tables['idx_to_directory'][vg_idx],
+            #                         self.look_up_tables['idx_to_filename'][vg_idx])
+            img_path = os.path.join(self.img_dir_root, "images",
                                     self.look_up_tables['idx_to_filename'][vg_idx])
 
             img = Image.open(img_path).convert("RGB")

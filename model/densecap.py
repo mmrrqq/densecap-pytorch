@@ -1,5 +1,6 @@
 from torch import nn
 import torch.nn.functional as F
+from torchvision.models._api import WeightsEnum, get_weight
 
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.models.detection.transform import GeneralizedRCNNTransform
@@ -173,8 +174,8 @@ class FastRCNNPredictor(nn.Module):
 
 
 def densecap_resnet50_fpn(backbone_pretrained=False, **kwargs):
-
-    backbone = resnet_fpn_backbone('resnet50', backbone_pretrained)
+    weights = get_weight("ResNet50_Weights.DEFAULT") if backbone_pretrained else None
+    backbone = resnet_fpn_backbone(backbone_name='resnet50', weights=weights)
     model = DenseCapModel(backbone, **kwargs)
 
     return model

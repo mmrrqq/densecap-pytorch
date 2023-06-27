@@ -59,7 +59,10 @@ class DenseCapDataset(Dataset):
 
         vg_idx = self.look_up_tables['split'][self.dataset_type][idx] if self.dataset_type else idx
 
-        img_path = os.path.join(self.img_dir_root, self.look_up_tables['idx_to_directory'][vg_idx],
+        # img_path = os.path.join(self.img_dir_root, self.look_up_tables['idx_to_directory'][vg_idx],
+        #                         self.look_up_tables['idx_to_filename'][vg_idx])
+        # assume all images in same directory..
+        img_path = os.path.join(self.img_dir_root, "images",
                                 self.look_up_tables['idx_to_filename'][vg_idx])
 
         img = Image.open(img_path).convert("RGB")
