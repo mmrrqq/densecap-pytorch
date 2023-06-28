@@ -37,6 +37,7 @@ CLASSES = {0: 'BACK_LEFT', 1: 'BACK_RIGHT', 2: 'FRONT_LEFT', 3: 'FRONT_RIGHT'}
 CLASS_MAPPING = {v: k for k, v in CLASSES.items()}
 
 
+# TODO: add proper args parser
 def set_args():
     args = dict()
 
@@ -61,6 +62,7 @@ def set_args():
     args['batch_size'] = 4
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
+    args['train_auxiliary_loss'] = True
 
     if not os.path.exists(os.path.join(CONFIG_PATH, MODEL_NAME)):
         os.makedirs(os.path.join(CONFIG_PATH, MODEL_NAME))
@@ -139,12 +141,11 @@ def train(args):
 
     scaler = GradScaler()
     rng = np.random.default_rng()
-    use_auxiliary_loss = False
 
     for epoch in range(MAX_EPOCHS):
 
-        for batch, data in enumerate(zip(train_loader, car_data_loader) if use_auxiliary_loss else train_loader):
-            if use_auxiliary_loss:
+        for batch, data in enumerate(zip(train_loader, car_data_loader) if args['train_auxiliary_loss'] else train_loader):
+            if args['train_auxiliary_loss']:
                 (img, targets, info), (car_images, car_classes, car_cam_poses) = data
             else:
                 img, targets, info = data
@@ -163,30 +164,29 @@ def train(args):
             total_loss = args['detect_loss_weight'] * detect_loss + args['caption_loss_weight'] * caption_loss
 
             # auxiliary loss
-            if use_auxiliary_loss:
+            if args['train_auxiliary_loss']:
                 model.eval()
                 # TODO MARKUS: freeze roi heads
                 # TODO MARKUS: use autocast, scale losses
-                classes = np.array([CLASS_MAPPING[cls[0]] for cls in classes]).astype(int)
+                car_classes = np.array([CLASS_MAPPING[cls[0]] for cls in car_classes]).astype(int)
 
                 features = []
 
                 for img in car_images:
-                    # TODO MARKUS: what is the output?!
-                    predictions, img_features = model(img)
-                    features.append(img_features["p7"])
+                    backbone_features = model.backbone(img.to(device))
+                    features.append(backbone_features['pool'])
 
                 features = torch.stack(features)
 
-                contrastive_loss = torch.zeros(()).to(model.device)
-                multiview_loss = torch.zeros(()).to(model.device)
+                contrastive_loss = torch.zeros(()).to(device)
+                multiview_loss = torch.zeros(()).to(device)
 
                 for i in range(len(features)):
                     i_features: torch.Tensor = f.normalize(torch.flatten(features[i]), dim=0)
                     i_cam_pos = car_cam_poses[i]
 
-                    i_class = classes[i]
-                    other_class_mask = classes != i_class
+                    i_class = car_classes[i]
+                    other_class_mask = car_classes != i_class
                     same_class_mask = ~other_class_mask
 
                     if np.sum(same_class_mask) < 2:
@@ -229,7 +229,7 @@ def train(args):
                         # dot product distance is most similar the greater it is..
                         multiview_loss += torch.abs(dot / cam_distance)
 
-                losses = contrastive_loss + multiview_loss
+                auxiliary_losses = contrastive_loss + multiview_loss
                 # TODO: do something with loss
 
             # record loss
@@ -243,6 +243,11 @@ def train(args):
                 writer.add_scalar('details/loss_classifier', losses['loss_classifier'].item(), iter_counter)
                 writer.add_scalar('details/loss_box_reg', losses['loss_box_reg'].item(), iter_counter)
 
+                if args['train_auxiliary_loss']:
+                    writer.add_scalar('batch_loss/auxiliary_losses', auxiliary_losses.item(), iter_counter)
+                    writer.add_scalar('details/contrastive_loss', contrastive_loss.item(), iter_counter)
+                    writer.add_scalar('details/multiview_loss', multiview_loss.item(), iter_counter)
+
             if iter_counter % (len(train_set) / (args['batch_size'] * 16)) == 0:
                 print("[{}][{}]\ntotal_loss {:.3f}".format(epoch, batch, total_loss.item()))
                 for k, v in losses.items():
@@ -251,6 +256,9 @@ def train(args):
             optimizer.zero_grad()
             # total_loss.backward()
             # apex backward
+            if args['train_auxiliary_loss']:
+                scaler.scale(auxiliary_losses).backward()
+
             scaler.scale(total_loss).backward()
             scaler.step(optimizer)
             scaler.update()
