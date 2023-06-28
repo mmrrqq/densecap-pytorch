@@ -63,7 +63,7 @@ def set_args():
     args['box_detections_per_img'] = 50
 
     if not os.path.exists(os.path.join(CONFIG_PATH, MODEL_NAME)):
-        os.mkdir(os.path.join(CONFIG_PATH, MODEL_NAME))
+        os.makedirs(os.path.join(CONFIG_PATH, MODEL_NAME))
     with open(os.path.join(CONFIG_PATH, MODEL_NAME, 'config.json'), 'w') as f:
         json.dump(args, f, indent=2)
 
