@@ -253,6 +253,7 @@ def train(args):
             # apex backward
             scaler.scale(total_loss).backward()
             scaler.step(optimizer)
+            scaler.update()
 
             if iter_counter > 0 and iter_counter % 2000 == 0:
                 try:
