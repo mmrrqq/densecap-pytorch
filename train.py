@@ -56,7 +56,9 @@ def set_args():
     # Training Settings
     args['detect_loss_weight'] = 1.
     args['caption_loss_weight'] = 1.
-    args['lr'] = 1e-5
+    args['multiview_loss_weight'] = 0.1
+    args['contrastive_loss_weight'] = 0.1
+    args['lr'] = 1e-4
     args['caption_lr'] = 1e-3
     args['weight_decay'] = 0.1
     args['batch_size'] = 8
@@ -144,7 +146,8 @@ def train(args):
 
     for epoch in range(MAX_EPOCHS):
 
-        for batch, data in enumerate(zip(train_loader, car_data_loader) if args['train_auxiliary_loss'] else train_loader):
+        for batch, data in enumerate(
+                zip(train_loader, car_data_loader) if args['train_auxiliary_loss'] else train_loader):
             if args['train_auxiliary_loss']:
                 (img, targets, info), (car_images, car_classes, car_cam_poses) = data
             else:
@@ -213,12 +216,12 @@ def train(args):
                                 f.normalize(torch.flatten(vec), dim=0)
                             ))
 
-                        contrastive_loss += -torch.log(same_class_sim/(same_class_sim + other_class_sim_sum))
+                        contrastive_loss += -torch.log(same_class_sim / (same_class_sim + other_class_sim_sum))
                     except ValueError as e:
                         print(e)
                         continue
 
-                    for j in range(i+1, len(features)):
+                    for j in range(i + 1, len(features)):
                         j_features: torch.Tensor = f.normalize(torch.flatten(features[j]), dim=0)
                         j_cam_pos = car_cam_poses[j]
 
@@ -229,7 +232,8 @@ def train(args):
                         # dot product distance is most similar the greater it is..
                         multiview_loss += torch.abs(dot / cam_distance)
 
-                auxiliary_losses = contrastive_loss + multiview_loss
+                auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + \
+                                   args['multiview_loss_weight'] * multiview_loss
                 # TODO: do something with loss
 
             # record loss
