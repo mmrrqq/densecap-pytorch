@@ -27,7 +27,7 @@ MAX_EPOCHS = 10
 USE_TB = True
 CONFIG_PATH = './model_params'
 MODEL_NAME = 'train_all_val_all_bz_2_epoch_10_inject_init'
-IMG_DIR_ROOT = '/home/markus/dev/grit_socket/datasets/vg'
+IMG_DIR_ROOT = '../3-dance/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
 MAX_TRAIN_IMAGE = -1  # if -1, use all images in train set
@@ -59,7 +59,7 @@ def set_args():
     args['lr'] = 1e-5
     args['caption_lr'] = 1e-3
     args['weight_decay'] = 0.1
-    args['batch_size'] = 4
+    args['batch_size'] = 8
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
     args['train_auxiliary_loss'] = True
@@ -121,7 +121,7 @@ def train(args):
     val_set = DenseCapDataset(IMG_DIR_ROOT, VG_DATA_PATH, LOOK_UP_TABLES_PATH, dataset_type='val')
     idx_to_token = train_set.look_up_tables['idx_to_token']
 
-    car_dataset = CarClassImageDataset(img_dir='../grit_socket/data/car_images_model_sort')
+    car_dataset = CarClassImageDataset(img_dir='../3-dance/data/car_images_model_sort')
     car_data_loader = DataLoader(car_dataset, batch_size=1)
 
     if MAX_TRAIN_IMAGE > 0:
