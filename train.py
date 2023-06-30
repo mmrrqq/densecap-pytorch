@@ -56,9 +56,9 @@ def set_args():
     # Training Settings
     args['detect_loss_weight'] = 1.
     args['caption_loss_weight'] = 1.
-    args['lr'] = 1e-4
+    args['lr'] = 1e-5
     args['caption_lr'] = 1e-3
-    args['weight_decay'] = 0.
+    args['weight_decay'] = 0.1
     args['batch_size'] = 4
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
