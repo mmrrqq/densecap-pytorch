@@ -145,7 +145,6 @@ def train(args):
     rng = np.random.default_rng()
 
     for epoch in range(MAX_EPOCHS):
-
         for batch, data in enumerate(
                 zip(train_loader, car_data_loader) if args['train_auxiliary_loss'] else train_loader):
             if args['train_auxiliary_loss']:
@@ -190,20 +189,21 @@ def train(args):
 
                     i_class = car_classes[i]
                     other_class_mask = car_classes != i_class
-                    same_class_mask = ~other_class_mask
+                    same_class_indices = (~other_class_mask).nonzero()[0]
+                    # make sure we do not compare to ith features
+                    same_class_indices = same_class_indices[same_class_indices != i]
 
-                    if np.sum(same_class_mask) < 2:
+                    if len(same_class_indices) < 1:
                         print("not enough same class samples, skipping..")
                         continue
 
                     other_class_features = features[other_class_mask]
-                    same_class_features = features[same_class_mask]
+                    same_class_features = features[rng.choice(same_class_indices, 1).item()]
 
                     # TODO: preferably sample from all three other classes..
                     try:
                         # this follows towers of babel
-                        # TODO do not simply take first same class feature
-                        same_feature_vec = f.normalize(torch.flatten(same_class_features[0]), dim=0)
+                        same_feature_vec = f.normalize(torch.flatten(same_class_features), dim=0)
                         same_class_sim = torch.exp(torch.dot(i_features, same_feature_vec))
 
                         other_samples_idx = rng.choice(np.arange(len(other_class_features)), size=3, replace=False)
@@ -261,9 +261,10 @@ def train(args):
             # total_loss.backward()
             # apex backward
             if args['train_auxiliary_loss']:
-                scaler.scale(auxiliary_losses).backward()
+                scaler.scale(total_loss + auxiliary_losses).backward()
+            else:
+                scaler.scale(total_loss).backward()
 
-            scaler.scale(total_loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
