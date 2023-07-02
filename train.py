@@ -156,8 +156,8 @@ def train(args):
             targets = [{k: v.to(device) for k, v in target.items()} for target in targets]
 
             model.train()
-            with autocast():
-                losses = model(img, targets)
+            # with autocast():
+            losses = model(img, targets)
 
             detect_loss = losses['loss_objectness'] + losses['loss_rpn_box_reg'] + \
                           losses['loss_classifier'] + losses['loss_box_reg']
@@ -175,9 +175,9 @@ def train(args):
                 features = []
 
                 for img in car_images:
-                    with autocast():
-                        backbone_features = model.backbone(img.to(device))
-                        features.append(backbone_features['pool'])
+                    # with autocast():
+                    backbone_features = model.backbone(img.to(device))
+                    features.append(backbone_features['pool'])
 
                 features = torch.stack(features)
 
@@ -262,12 +262,15 @@ def train(args):
             # total_loss.backward()
             # apex backward
             if args['train_auxiliary_loss']:
-                scaler.scale(total_loss + auxiliary_losses).backward()
+                total_loss.backward()
+                auxiliary_losses.backward()
+                # scaler.scale(total_loss + auxiliary_losses).backward()
             else:
-                scaler.scale(total_loss).backward()
-
-            scaler.step(optimizer)
-            scaler.update()
+                total_loss.backward()
+                # scaler.scale(total_loss).backward()
+            optimizer.step()
+            # scaler.step(optimizer)
+            # scaler.update()
 
             if iter_counter > 0 and iter_counter % 2000 == 0:
                 try:
