@@ -175,8 +175,9 @@ def train(args):
                 features = []
 
                 for img in car_images:
-                    backbone_features = model.backbone(img.to(device))
-                    features.append(backbone_features['pool'])
+                    with autocast():
+                        backbone_features = model.backbone(img.to(device))
+                        features.append(backbone_features['pool'])
 
                 features = torch.stack(features)
 
@@ -270,7 +271,8 @@ def train(args):
 
             if iter_counter > 0 and iter_counter % 2000 == 0:
                 try:
-                    results = quantity_check(model, val_set, idx_to_token, device, max_iter=100, verbose=True)
+                    with autocast():
+                        results = quantity_check(model, val_set, idx_to_token, device, max_iter=100, verbose=True)
                     if results['map'] > best_map:
                         best_map = results['map']
                         save_model(model, optimizer, scaler, results, iter_counter)
