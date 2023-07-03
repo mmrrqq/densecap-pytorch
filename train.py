@@ -148,7 +148,7 @@ def train(args):
         for batch, data in enumerate(
                 zip(train_loader, car_data_loader) if args['train_auxiliary_loss'] else train_loader):
             if args['train_auxiliary_loss']:
-                (img, targets, info), (car_images, car_classes, car_cam_poses) = data
+                (img, targets, info), (car_images, car_classes, car_cam_poses, model_name) = data
             else:
                 img, targets, info = data
 
@@ -235,7 +235,6 @@ def train(args):
 
                 auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + \
                                    args['multiview_loss_weight'] * multiview_loss
-                # TODO: do something with loss
 
             # record loss
             if USE_TB:
@@ -249,6 +248,8 @@ def train(args):
                 writer.add_scalar('details/loss_box_reg', losses['loss_box_reg'].item(), iter_counter)
 
                 if args['train_auxiliary_loss']:
+                    if auxiliary_losses.item() > 10:
+                        print(f"{model_name} exceeds aux loss limit!")
                     writer.add_scalar('batch_loss/auxiliary_losses', auxiliary_losses.item(), iter_counter)
                     writer.add_scalar('details/contrastive_loss', contrastive_loss.item(), iter_counter)
                     writer.add_scalar('details/multiview_loss', multiview_loss.item(), iter_counter)

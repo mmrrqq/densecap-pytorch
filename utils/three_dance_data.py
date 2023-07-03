@@ -37,4 +37,4 @@ class CarClassImageDataset(Dataset):
         else:
             images = [transforms.ToTensor()(img) for img in images]
 
-        return images, classes, cam_poses
+        return images, classes, cam_poses, model_name
