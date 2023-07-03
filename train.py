@@ -16,6 +16,7 @@ from model.densecap import densecap_resnet50_fpn
 
 from evaluate import quality_check, quantity_check
 from utils.three_dance_data import CarClassImageDataset
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 torch.backends.cudnn.benchmark = True
 np.random.seed(42)
@@ -27,7 +28,7 @@ MAX_EPOCHS = 10
 USE_TB = True
 CONFIG_PATH = './model_params'
 MODEL_NAME = 'train_all_val_all_bz_2_epoch_10_inject_init'
-IMG_DIR_ROOT = '../3-dance/datasets/vg'
+IMG_DIR_ROOT = '../grit_socket/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
 MAX_TRAIN_IMAGE = -1  # if -1, use all images in train set
@@ -60,8 +61,8 @@ def set_args():
     args['contrastive_loss_weight'] = 0.1
     args['lr'] = 1e-4
     args['caption_lr'] = 1e-3
-    args['weight_decay'] = 0.1
-    args['batch_size'] = 8
+    args['weight_decay'] = 0
+    args['batch_size'] = 4
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
     args['train_auxiliary_loss'] = True
@@ -123,7 +124,7 @@ def train(args):
     val_set = DenseCapDataset(IMG_DIR_ROOT, VG_DATA_PATH, LOOK_UP_TABLES_PATH, dataset_type='val')
     idx_to_token = train_set.look_up_tables['idx_to_token']
 
-    car_dataset = CarClassImageDataset(img_dir='../3-dance/data/car_images_model_sort')
+    car_dataset = CarClassImageDataset(img_dir='../grit_socket/data/car_images_model_sort')
     car_data_loader = DataLoader(car_dataset, batch_size=1)
 
     if MAX_TRAIN_IMAGE > 0:
@@ -172,66 +173,79 @@ def train(args):
                 # TODO MARKUS: use autocast, scale losses
                 car_classes = np.array([CLASS_MAPPING[cls[0]] for cls in car_classes]).astype(int)
 
-                features = []
-
-                for img in car_images:
-                    # with autocast():
-                    backbone_features = model.backbone(img.to(device))
-                    features.append(backbone_features['pool'])
-
-                features = torch.stack(features)
-
+                comps = 0
                 contrastive_loss = torch.zeros(()).to(device)
                 multiview_loss = torch.zeros(()).to(device)
 
-                for i in range(len(features)):
-                    i_features: torch.Tensor = f.normalize(torch.flatten(features[i]), dim=0)
-                    i_cam_pos = car_cam_poses[i]
-
+                # TODO: preferably sample from all three other classes..
+                # skip invalid i's
+                while True:
+                    i = rng.choice(np.arange(len(car_images)), 1).item()
+                    # for i in range(len(features)):
                     i_class = car_classes[i]
                     other_class_mask = car_classes != i_class
+                    other_class_indices = other_class_mask.nonzero()[0]
                     same_class_indices = (~other_class_mask).nonzero()[0]
                     # make sure we do not compare to ith features
                     same_class_indices = same_class_indices[same_class_indices != i]
+                    try:
+                        other_samples_idx = rng.choice(other_class_indices, size=3, replace=False)
+                    except ValueError as e:
+                        print(e)
+                        continue
 
                     if len(same_class_indices) < 1:
                         print("not enough same class samples, skipping..")
                         continue
 
-                    other_class_features = features[other_class_mask]
-                    same_class_features = features[rng.choice(same_class_indices, 1).item()]
+                    break
 
-                    # TODO: preferably sample from all three other classes..
-                    try:
-                        # this follows towers of babel
-                        same_feature_vec = f.normalize(torch.flatten(same_class_features), dim=0)
-                        same_class_sim = torch.exp(torch.dot(i_features, same_feature_vec))
+                features = []
+                # disable grad for other calls than i'th!
+                for idx, img in enumerate(car_images):
+                    if idx != i:
+                        with torch.no_grad():
+                    # with autocast():
+                            backbone_features = model.backbone(img.to(device))
+                            features.append(backbone_features['pool'])
+                    else:
+                        backbone_features = model.backbone(img.to(device))
+                        features.append(backbone_features['pool'])
 
-                        other_samples_idx = rng.choice(np.arange(len(other_class_features)), size=3, replace=False)
-                        other_samples = other_class_features[other_samples_idx]
+                features = torch.stack(features)
 
-                        other_class_sim_sum = 0
-                        for vec in other_samples:
-                            other_class_sim_sum += torch.exp(torch.dot(
-                                i_features,
-                                f.normalize(torch.flatten(vec), dim=0)
-                            ))
+                i_features: torch.Tensor = f.normalize(torch.flatten(features[i]), dim=0)
+                i_cam_pos = car_cam_poses[i]
 
-                        contrastive_loss += -torch.log(same_class_sim / (same_class_sim + other_class_sim_sum))
-                    except ValueError as e:
-                        print(e)
+                same_class_features = features[rng.choice(same_class_indices, 1).item()]
+
+                # this follows towers of babel
+                same_feature_vec = f.normalize(torch.flatten(same_class_features), dim=0)
+                same_class_sim = torch.exp(torch.dot(i_features, same_feature_vec))
+                other_samples = features[other_samples_idx]
+
+                other_class_sim_sum = 0
+                for vec in other_samples:
+                    other_class_sim_sum += torch.exp(torch.dot(
+                        i_features,
+                        f.normalize(torch.flatten(vec), dim=0)
+                    ))
+
+                contrastive_loss += -torch.log(same_class_sim / (same_class_sim + other_class_sim_sum))
+
+                for j in range(len(features)):
+                    if i == j:
                         continue
+                    comps += 1
+                    j_features: torch.Tensor = f.normalize(torch.flatten(features[j]), dim=0)
+                    j_cam_pos = car_cam_poses[j]
 
-                    for j in range(i + 1, len(features)):
-                        j_features: torch.Tensor = f.normalize(torch.flatten(features[j]), dim=0)
-                        j_cam_pos = car_cam_poses[j]
+                    cam_distance = torch.linalg.vector_norm(i_cam_pos - j_cam_pos)
+                    dot = torch.dot(i_features, j_features)
 
-                        cam_distance = torch.linalg.vector_norm(i_cam_pos - j_cam_pos)
-                        dot = torch.dot(i_features, j_features)
-
-                        # if cam_distance < 2:
-                        # dot product distance is most similar the greater it is..
-                        multiview_loss += torch.abs(dot / cam_distance)
+                    # if cam_distance < 2:
+                    # dot product distance is most similar the greater it is..
+                    multiview_loss += torch.abs(dot / cam_distance)
 
                 auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + \
                                    args['multiview_loss_weight'] * multiview_loss
