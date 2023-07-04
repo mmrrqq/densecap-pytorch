@@ -26,7 +26,7 @@ torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-MAX_EPOCHS = 10
+MAX_EPOCHS = 30
 USE_TB = True
 CONFIG_PATH = './model_params'
 MODEL_NAME = 'train_all_val_all_bz_2_epoch_10_inject_init'
@@ -91,15 +91,14 @@ def save_model(model, optimizer, scaler, results_on_val, iter_counter, flag=None
     torch.save(state, filename)
 
 
-def contrastive_clip_loss(features: torch.Tensor, classes: List[int], i: int, other_samples_idx: List[int], learning_temp=np.log(1/0.07)):
+def contrastive_clip_loss(embeddings: torch.Tensor, learning_temp=np.log(1/0.07)):
     """
     Symmetric contrastive loss as introduced in CLIP.
     default learning_temp taken from clip implementation.
     """
     loss_fn = nn.CrossEntropyLoss()
-    other_samples_idx.append(i)
     # class_sort = np.argsort(classes[indices])
-    embeddings = features[other_samples_idx]
+    # embeddings = features[other_samples_idx]
     embeddings = f.normalize(torch.flatten(embeddings, start_dim=1), dim=1)
 
     logits = torch.matmul(embeddings, embeddings.T) * np.exp(learning_temp)
@@ -187,7 +186,7 @@ def train(args):
     idx_to_token = train_set.look_up_tables['idx_to_token']
 
     car_dataset = CarClassImageDataset(img_dir='../grit_socket/data/car_images_model_sort')
-    car_data_loader = DataLoader(car_dataset, batch_size=1)
+    car_data_loader = DataLoader(car_dataset, batch_size=1, shuffle=True)
 
     if MAX_TRAIN_IMAGE > 0:
         train_set = Subset(train_set, range(MAX_TRAIN_IMAGE))
@@ -264,22 +263,21 @@ def train(args):
 
                     break
 
-                features = []
-                # unfreeze backbone layers!
-                # disable grad for other calls than i'th!
-                for idx, img in enumerate(car_images):
-                    if idx != i:
-                        with torch.no_grad():
-                            # with autocast():
+                if False:
+                    features = []
+                    # disable grad for other calls than i'th!
+                    for idx, img in enumerate(car_images):
+                        if idx != i:
+                            with torch.no_grad():
+                                # with autocast():
+                                backbone_features = model.backbone(img.to(device))
+                                features.append(backbone_features['pool'])
+                        else:
                             backbone_features = model.backbone(img.to(device))
                             features.append(backbone_features['pool'])
-                    else:
-                        backbone_features = model.backbone(img.to(device))
-                        features.append(backbone_features['pool'])
 
-                features = torch.stack(features)
+                    features = torch.stack(features)
 
-                if False:
                     same_class_index = rng.choice(same_class_indices, 1).item()
                     contrastive_loss, multiview_loss = contrastive_multiview_loss(features, car_cam_poses, i,
                                                                               same_class_index, other_samples_idx)
@@ -288,8 +286,16 @@ def train(args):
                                        args['multiview_loss_weight'] * multiview_loss
 
                 else:
-                    contrastive_loss = contrastive_clip_loss(features, car_classes, i, other_samples_idx)
-                    auxiliary_losses = contrastive_loss
+                    other_samples_idx.append(i)
+                    features = []
+                    for idx in other_samples_idx:
+                        img = car_images[idx]
+                        backbone_features = model.backbone(img.to(device))
+                        features.append(backbone_features['pool'])
+
+                    embeddings = torch.stack(features)
+
+                    auxiliary_losses = contrastive_clip_loss(embeddings)
 
             # record loss
             if USE_TB:
