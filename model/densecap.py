@@ -175,7 +175,7 @@ class FastRCNNPredictor(nn.Module):
 
 def densecap_resnet50_fpn(backbone_pretrained=False, **kwargs):
     weights = get_weight("ResNet50_Weights.DEFAULT") if backbone_pretrained else None
-    backbone = resnet_fpn_backbone(backbone_name='resnet50', weights=weights)
+    backbone = resnet_fpn_backbone(backbone_name='resnet50', weights=weights, trainable_layers=5)
     model = DenseCapModel(backbone, **kwargs)
 
     return model
