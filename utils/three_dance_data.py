@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from PIL import Image
@@ -35,6 +36,6 @@ class CarClassImageDataset(Dataset):
         if self.transform:
             images = [self.transform(image) for image in images]
         else:
-            images = [transforms.ToTensor()(img) for img in images]
+            images = torch.stack([transforms.ToTensor()(img) for img in images]).squeeze()
 
         return images, classes, cam_poses, model_name
