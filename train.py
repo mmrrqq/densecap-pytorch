@@ -91,7 +91,7 @@ def save_model(model, optimizer, scaler, results_on_val, iter_counter, flag=None
     torch.save(state, filename)
 
 
-def contrastive_clip_loss(embeddings: torch.Tensor, learning_temp=np.log(1/0.07)):
+def contrastive_clip_loss_fn(embeddings: torch.Tensor, learning_temp=np.log(1/0.07)):
     """
     Symmetric contrastive loss as introduced in CLIP.
     default learning_temp taken from clip implementation.
@@ -106,6 +106,25 @@ def contrastive_clip_loss(embeddings: torch.Tensor, learning_temp=np.log(1/0.07)
     # (not very) symmetric loss function, as cols and rows are equal!
     pseudo_labels = torch.arange(len(CLASSES.keys()), dtype=torch.long, device=device)
     loss = loss_fn(logits, pseudo_labels)
+
+    return loss
+
+
+def multiview_loss_fn(features: torch.Tensor, cam_poses):
+    i_features: torch.Tensor = f.normalize(torch.flatten(features[0]), dim=0)
+    i_cam_pos = cam_poses[0]
+    loss = torch.zeros(()).to(device)
+
+    for j in range(1, len(features)):
+        j_features: torch.Tensor = f.normalize(torch.flatten(features[j]), dim=0)
+        j_cam_pos = cam_poses[j]
+
+        cam_distance = torch.linalg.vector_norm(i_cam_pos - j_cam_pos)
+        dot = torch.dot(i_features, j_features)
+
+        # if cam_distance < 2:
+        # dot product distance is most similar the greater it is..
+        loss += torch.exp(dot) / cam_distance
 
     return loss
 
@@ -253,13 +272,13 @@ def train(args):
                         continue
 
                     other_class_mask = car_classes != i_class
-                    same_class_indices = (~other_class_mask).nonzero()[0]
-                    # make sure we do not compare to ith features
-                    same_class_indices = same_class_indices[same_class_indices != i]
-
-                    if len(same_class_indices) < 1:
-                        print("not enough same class samples, skipping..")
-                        continue
+                    # same_class_indices = (~other_class_mask).nonzero()[0]
+                    # # make sure we do not compare to ith features
+                    # same_class_indices = same_class_indices[same_class_indices != i]
+                    #
+                    # if len(same_class_indices) < 1:
+                    #     print("not enough same class samples, skipping..")
+                    #     continue
 
                     break
 
@@ -286,16 +305,16 @@ def train(args):
                                        args['multiview_loss_weight'] * multiview_loss
 
                 else:
-                    other_samples_idx.append(i)
-                    features = []
+                    other_samples_idx.insert(0, i)
+                    cam_poses = []
                     for idx in other_samples_idx:
-                        img = car_images[idx]
-                        backbone_features = model.backbone(img.to(device))
-                        features.append(backbone_features['pool'])
+                        cam_poses.append(car_cam_poses[idx].to(device))
 
-                    embeddings = torch.stack(features)
+                    output = model.backbone(car_images[0][other_samples_idx].to(device))
+                    embeddings = output['pool']
 
-                    auxiliary_losses = contrastive_clip_loss(embeddings)
+                    auxiliary_losses = contrastive_clip_loss_fn(embeddings) + multiview_loss_fn(embeddings, cam_poses)
+                    print(auxiliary_losses)
 
             # record loss
             if USE_TB:
