@@ -59,8 +59,8 @@ def set_args():
     # Training Settings
     args['detect_loss_weight'] = 1.
     args['caption_loss_weight'] = 1.
-    args['multiview_loss_weight'] = 0.05
-    args['contrastive_loss_weight'] = 0.07
+    args['multiview_loss_weight'] = 0.1
+    args['contrastive_loss_weight'] = 1.0
     args['lr'] = 1e-4
     args['caption_lr'] = 1e-3
     args['weight_decay'] = 0
@@ -313,8 +313,9 @@ def train(args):
                     output = model.backbone(car_images[0][other_samples_idx].to(device))
                     embeddings = output['pool']
 
-                    auxiliary_losses = contrastive_clip_loss_fn(embeddings) + multiview_loss_fn(embeddings, cam_poses)
-                    print(auxiliary_losses)
+                    contrastive_loss = contrastive_clip_loss_fn(embeddings)
+                    multiview_loss = multiview_loss_fn(embeddings, cam_poses)
+                    auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + args['multiview_loss_weight'] * multiview_loss
 
             # record loss
             if USE_TB:
@@ -329,8 +330,8 @@ def train(args):
 
                 if args['train_auxiliary_loss']:
                     writer.add_scalar('batch_loss/auxiliary_losses', auxiliary_losses.item(), iter_counter)
-                    # writer.add_scalar('details/contrastive_loss', contrastive_loss.item(), iter_counter)
-                    # writer.add_scalar('details/multiview_loss', multiview_loss.item(), iter_counter)
+                    writer.add_scalar('details/contrastive_loss', contrastive_loss.item(), iter_counter)
+                    writer.add_scalar('details/multiview_loss', multiview_loss.item(), iter_counter)
 
             if iter_counter % (len(train_set) / (args['batch_size'] * 16)) == 0:
                 print("[{}][{}]\ntotal_loss {:.3f}".format(epoch, batch, total_loss.item()))
@@ -351,10 +352,10 @@ def train(args):
             # scaler.step(optimizer)
             # scaler.update()
 
-            if iter_counter > 0 and iter_counter % 2000 == 0:
+            if iter_counter > 0 and iter_counter % 4000 == 0:
                 try:
                     with autocast():
-                        results = quantity_check(model, val_set, idx_to_token, device, max_iter=100, verbose=True)
+                        results = quantity_check(model, val_set, idx_to_token, device, verbose=False)
                     if results['map'] > best_map:
                         best_map = results['map']
                         save_model(model, optimizer, scaler, results, iter_counter)
