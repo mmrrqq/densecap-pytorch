@@ -29,7 +29,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MAX_EPOCHS = 10
 USE_TB = True
 CONFIG_PATH = './model_params'
-MODEL_NAME = 'without_aux'
+MODEL_NAME = 'with_aux'
 IMG_DIR_ROOT = '../3-dance/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
@@ -60,7 +60,7 @@ def set_args():
     args['detect_loss_weight'] = 1.
     args['caption_loss_weight'] = 1.
     args['multiview_loss_weight'] = 0.05
-    args['contrastive_loss_weight'] = 1.0
+    args['contrastive_loss_weight'] = 1.2
     args['lr'] = 1e-4
     args['caption_lr'] = 1e-3
     args['weight_decay'] = 0
@@ -68,6 +68,7 @@ def set_args():
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
     args['train_auxiliary_loss'] = True
+    args['aux_batch_size'] = 16
 
     if not os.path.exists(os.path.join(CONFIG_PATH, MODEL_NAME)):
         os.makedirs(os.path.join(CONFIG_PATH, MODEL_NAME))
@@ -97,15 +98,15 @@ def contrastive_clip_loss_fn(embeddings: torch.Tensor, classes: List[int], learn
     default learning_temp taken from clip implementation.
     """
     loss_fn = nn.CrossEntropyLoss()
-    class_sort = np.argsort(classes)
-    embeddings = embeddings[class_sort]
+    # class_sort = np.argsort(classes)
+    # embeddings = embeddings[class_sort]
     embeddings = f.normalize(torch.flatten(embeddings, start_dim=1), dim=1)
 
     logits = torch.matmul(embeddings, embeddings.T) * np.exp(learning_temp)
 
     # (not very) symmetric loss function, as cols and rows are equal!
-    pseudo_labels = torch.arange(len(CLASSES.keys()), dtype=torch.long, device=device)
-    loss = loss_fn(logits, pseudo_labels)
+    # pseudo_labels = torch.arange(len(CLASSES.keys()), dtype=torch.long, device=device)
+    loss = loss_fn(logits, classes)
 
     return loss
 
@@ -250,37 +251,37 @@ def train(args):
             if args['train_auxiliary_loss']:
                 # TODO MARKUS: freeze roi heads
                 # TODO MARKUS: use autocast, scale losses
-                car_classes = np.array([CLASS_MAPPING[cls[0]] for cls in car_classes]).astype(int)
+                car_classes = torch.tensor([CLASS_MAPPING[cls[0]] for cls in car_classes]).to(int).to(device)
 
                 # skip invalid i's
-                while True:
-                    i = rng.choice(np.arange(len(car_images)), 1).item()
-                    # for i in range(len(features)):
-                    i_class = car_classes[i]
-                    other_samples_idx = []
-                    try:
-                        for cls in CLASSES.keys():
-                            if cls == i_class:
-                                continue
+                # while True:
+                #     i = rng.choice(np.arange(len(car_images)), 1).item()
+                #     # for i in range(len(features)):
+                #     i_class = car_classes[i]
+                #     other_samples_idx = []
+                #     try:
+                #         for cls in CLASSES.keys():
+                #             if cls == i_class:
+                #                 continue
 
-                            class_mask = car_classes == cls
-                            class_indices = class_mask.nonzero()[0]
-                            samples_index = rng.choice(class_indices, size=1).item()
-                            other_samples_idx.append(samples_index)
-                    except ValueError as e:
-                        print(e)
-                        continue
+                #             class_mask = car_classes == cls
+                #             class_indices = class_mask.nonzero()[0]
+                #             samples_index = rng.choice(class_indices, size=1).item()
+                #             other_samples_idx.append(samples_index)
+                #     except ValueError as e:
+                #         print(e)
+                #         continue
 
-                    other_class_mask = car_classes != i_class
-                    # same_class_indices = (~other_class_mask).nonzero()[0]
-                    # # make sure we do not compare to ith features
-                    # same_class_indices = same_class_indices[same_class_indices != i]
-                    #
-                    # if len(same_class_indices) < 1:
-                    #     print("not enough same class samples, skipping..")
-                    #     continue
+                #     other_class_mask = car_classes != i_class
+                #     # same_class_indices = (~other_class_mask).nonzero()[0]
+                #     # # make sure we do not compare to ith features
+                #     # same_class_indices = same_class_indices[same_class_indices != i]
+                #     #
+                #     # if len(same_class_indices) < 1:
+                #     #     print("not enough same class samples, skipping..")
+                #     #     continue
 
-                    break
+                #     break
 
                 if False:
                     features = []
@@ -305,19 +306,23 @@ def train(args):
                                        args['multiview_loss_weight'] * multiview_loss
 
                 else:
-                    other_samples_idx.insert(0, i)
-                    cam_poses = []
-                    classes = []
-                    for idx in other_samples_idx:
-                        cam_poses.append(car_cam_poses[idx].to(device))
-                        classes.append(car_classes[idx])
+                    # other_samples_idx.insert(0, i)
+                    # cam_poses = []
+                    # classes = []
+                    # for idx in other_samples_idx:
+                    #     cam_poses.append(car_cam_poses[idx].to(device))
+                    #     classes.append(car_classes[idx])                    
+                    samples_index = rng.choice(np.arange(len(car_classes)), size=args['aux_batch_size'])
+                    classes = car_classes[samples_index]
 
-                    output = model.backbone(car_images[0][other_samples_idx].to(device))
+                    images, _ = model.transform([image for image in car_images[0][samples_index].to(device)])
+                    output = model.backbone(images.tensors)
                     embeddings = output['pool']
 
                     contrastive_loss = contrastive_clip_loss_fn(embeddings, classes)
-                    multiview_loss = multiview_loss_fn(embeddings, cam_poses)
-                    auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + args['multiview_loss_weight'] * multiview_loss
+                    # multiview_loss = multiview_loss_fn(embeddings, car_cam_poses)
+                    # auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + args['multiview_loss_weight'] * multiview_loss
+                    auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss
 
             # record loss
             if USE_TB:
@@ -333,7 +338,7 @@ def train(args):
                 if args['train_auxiliary_loss']:
                     writer.add_scalar('batch_loss/auxiliary_losses', auxiliary_losses.item(), iter_counter)
                     writer.add_scalar('details/contrastive_loss', contrastive_loss.item(), iter_counter)
-                    writer.add_scalar('details/multiview_loss', multiview_loss.item(), iter_counter)
+                    # writer.add_scalar('details/multiview_loss', multiview_loss.item(), iter_counter)
 
             if iter_counter % (len(train_set) / (args['batch_size'] * 16)) == 0:
                 print("[{}][{}]\ntotal_loss {:.3f}".format(epoch, batch, total_loss.item()))
