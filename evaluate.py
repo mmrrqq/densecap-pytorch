@@ -78,7 +78,7 @@ def quantity_check(model, dataset, idx_to_token, device, max_iter=-1, verbose=Tr
             break
 
     results = evaluator.evaluate(verbose)
-    if verbose:
-        print('MAP: {:.3f} DET_MAP: {:.3f}'.format(results['map'], results['detmap']))
+    # if verbose:
+    print('MAP: {:.3f} DET_MAP: {:.3f}'.format(results['map'], results['detmap']))
 
     return results

@@ -26,10 +26,10 @@ torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-MAX_EPOCHS = 30
+MAX_EPOCHS = 10
 USE_TB = True
 CONFIG_PATH = './model_params'
-MODEL_NAME = 'train_all_val_all_bz_2_epoch_10_inject_init'
+MODEL_NAME = 'without_aux'
 IMG_DIR_ROOT = '../3-dance/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
@@ -67,7 +67,7 @@ def set_args():
     args['batch_size'] = 4
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
-    args['train_auxiliary_loss'] = True
+    args['train_auxiliary_loss'] = False
 
     if not os.path.exists(os.path.join(CONFIG_PATH, MODEL_NAME)):
         os.makedirs(os.path.join(CONFIG_PATH, MODEL_NAME))
