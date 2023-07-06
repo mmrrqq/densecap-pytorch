@@ -59,15 +59,15 @@ def set_args():
     # Training Settings
     args['detect_loss_weight'] = 1.
     args['caption_loss_weight'] = 1.
-    args['multiview_loss_weight'] = 0.1
+    args['multiview_loss_weight'] = 0.05
     args['contrastive_loss_weight'] = 1.0
     args['lr'] = 1e-4
     args['caption_lr'] = 1e-3
     args['weight_decay'] = 0
-    args['batch_size'] = 4
+    args['batch_size'] = 8
     args['use_pretrain_fasterrcnn'] = True
     args['box_detections_per_img'] = 50
-    args['train_auxiliary_loss'] = False
+    args['train_auxiliary_loss'] = True
 
     if not os.path.exists(os.path.join(CONFIG_PATH, MODEL_NAME)):
         os.makedirs(os.path.join(CONFIG_PATH, MODEL_NAME))
@@ -91,14 +91,14 @@ def save_model(model, optimizer, scaler, results_on_val, iter_counter, flag=None
     torch.save(state, filename)
 
 
-def contrastive_clip_loss_fn(embeddings: torch.Tensor, learning_temp=np.log(1/0.07)):
+def contrastive_clip_loss_fn(embeddings: torch.Tensor, classes: List[int], learning_temp=np.log(1/0.07)):
     """
     Symmetric contrastive loss as introduced in CLIP.
     default learning_temp taken from clip implementation.
     """
     loss_fn = nn.CrossEntropyLoss()
-    # class_sort = np.argsort(classes[indices])
-    # embeddings = features[other_samples_idx]
+    class_sort = np.argsort(classes)
+    embeddings = embeddings[class_sort]
     embeddings = f.normalize(torch.flatten(embeddings, start_dim=1), dim=1)
 
     logits = torch.matmul(embeddings, embeddings.T) * np.exp(learning_temp)
@@ -307,13 +307,15 @@ def train(args):
                 else:
                     other_samples_idx.insert(0, i)
                     cam_poses = []
+                    classes = []
                     for idx in other_samples_idx:
                         cam_poses.append(car_cam_poses[idx].to(device))
+                        classes.append(car_classes[idx])
 
                     output = model.backbone(car_images[0][other_samples_idx].to(device))
                     embeddings = output['pool']
 
-                    contrastive_loss = contrastive_clip_loss_fn(embeddings)
+                    contrastive_loss = contrastive_clip_loss_fn(embeddings, classes)
                     multiview_loss = multiview_loss_fn(embeddings, cam_poses)
                     auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + args['multiview_loss_weight'] * multiview_loss
 
