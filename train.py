@@ -60,7 +60,7 @@ def set_args():
     args['detect_loss_weight'] = 1.
     args['caption_loss_weight'] = 1.
     args['multiview_loss_weight'] = 0.05
-    args['contrastive_loss_weight'] = 1.2
+    args['contrastive_loss_weight'] = 1.0
     args['lr'] = 1e-4
     args['caption_lr'] = 1e-3
     args['weight_decay'] = 0
@@ -92,7 +92,7 @@ def save_model(model, optimizer, scaler, results_on_val, iter_counter, flag=None
     torch.save(state, filename)
 
 
-def contrastive_clip_loss_fn(embeddings: torch.Tensor, classes: List[int], learning_temp=np.log(1/0.07)):
+def contrastive_clip_loss_fn(embeddings: torch.Tensor, learning_temp=np.log(1/0.07)):
     """
     Symmetric contrastive loss as introduced in CLIP.
     default learning_temp taken from clip implementation.
@@ -105,8 +105,8 @@ def contrastive_clip_loss_fn(embeddings: torch.Tensor, classes: List[int], learn
     logits = torch.matmul(embeddings, embeddings.T) * np.exp(learning_temp)
 
     # (not very) symmetric loss function, as cols and rows are equal!
-    # pseudo_labels = torch.arange(len(CLASSES.keys()), dtype=torch.long, device=device)
-    loss = loss_fn(logits, classes)
+    pseudo_labels = torch.arange(len(CLASSES.keys()), dtype=torch.long, device=device)
+    loss = loss_fn(logits, pseudo_labels)
 
     return loss
 
@@ -311,18 +311,22 @@ def train(args):
                     # classes = []
                     # for idx in other_samples_idx:
                     #     cam_poses.append(car_cam_poses[idx].to(device))
-                    #     classes.append(car_classes[idx])                    
+                    #     classes.append(car_classes[idx])
+                    car_class_dict = {
+                        k: [img for img in car_images.to(device)[0][car_classes == k]] for k in CLASSES.keys()
+                    }                    
+
                     samples_index = rng.choice(np.arange(len(car_classes)), size=args['aux_batch_size'])
-                    classes = car_classes[samples_index]
 
-                    images, _ = model.transform([image for image in car_images[0][samples_index].to(device)])
-                    output = model.backbone(images.tensors)
-                    embeddings = output['pool']
-
-                    contrastive_loss = contrastive_clip_loss_fn(embeddings, classes)
-                    # multiview_loss = multiview_loss_fn(embeddings, car_cam_poses)
-                    # auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + args['multiview_loss_weight'] * multiview_loss
-                    auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss
+                    auxiliary_losses = torch.zeros(()).to(device)
+                    for idx, batch in enumerate(zip(*list(car_class_dict.values()))):                        
+                        images, _ = model.transform(batch)
+                        output = model.backbone(images.tensors)
+                        embeddings = output['pool']
+                        contrastive_loss = contrastive_clip_loss_fn(embeddings)
+                        # multiview_loss = multiview_loss_fn(embeddings, car_cam_poses)
+                        # auxiliary_losses = args['contrastive_loss_weight'] * contrastive_loss + args['multiview_loss_weight'] * multiview_loss
+                        auxiliary_losses += args['contrastive_loss_weight'] * contrastive_loss
 
             # record loss
             if USE_TB:
