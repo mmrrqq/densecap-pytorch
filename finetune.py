@@ -54,7 +54,7 @@ def load_model(model_config_path: Path, checkpoint_path: Path, return_features=F
 
 
 def main():
-    params_path = Path("compute_model_params")
+    params_path = Path("model_params")
     model_name = "without_aux"
     model = load_model(
         params_path / model_name / "config.json", 
@@ -105,7 +105,7 @@ def main():
             writer.add_scalar('details/loss_classifier', losses['loss_classifier'].item(), iter_counter)
             writer.add_scalar('details/loss_box_reg', losses['loss_box_reg'].item(), iter_counter)
 
-            if iter_counter > 0 and iter_counter % 4000 == 0:
+            if iter_counter > 0 and iter_counter % 400 == 0:
                 try:
                     results = quantity_check(model, val_set, idx_to_token, device, verbose=False)
                     if results['map'] > best_map:
