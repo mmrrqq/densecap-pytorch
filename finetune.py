@@ -20,8 +20,8 @@ IMG_DIR_ROOT = '../3-dance/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
 BATCH_SIZE = 8
-CAP_LR = 1e-3
-LR = 1e-4
+CAP_LR = 1e-4
+LR = 1e-5
 WEIGHT_DECAY = 0
 
 
@@ -105,7 +105,7 @@ def main():
             writer.add_scalar('details/loss_classifier', losses['loss_classifier'].item(), iter_counter)
             writer.add_scalar('details/loss_box_reg', losses['loss_box_reg'].item(), iter_counter)
 
-            if iter_counter > 0 and iter_counter % 400 == 0:
+            if iter_counter > 0 and iter_counter % 200 == 0:
                 try:
                     results = quantity_check(model, val_set, idx_to_token, device, verbose=False)
                     if results['map'] > best_map:
