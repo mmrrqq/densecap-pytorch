@@ -7,6 +7,14 @@ from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 from PIL import Image
 
+MAPPING = {0: 'BACK_LEFT', 1: 'BACK_RIGHT', 2: 'FRONT_LEFT', 3: 'FRONT_RIGHT'}
+
+
+def get_class_from_path(img_path: str):
+    for k, v in MAPPING.items():
+        if v in img_path:
+            return k
+
 
 class FilteredCarClassImageDataset(Dataset):    
     def __init__(self, path, transform=None):
@@ -35,11 +43,14 @@ class FilteredCarClassImageDataset(Dataset):
         boxes = torch.stack([torch.tensor(region['box'], dtype=torch.float32) for region in regions])
         caps = torch.stack([torch.tensor(region['cap'], dtype=torch.long) for region in regions])
         caps_len = torch.tensor([(cap != 0).sum() for cap in caps], dtype=torch.long)
+        view = torch.tensor(get_class_from_path(img_path))
+
 
         targets = {
             'boxes': boxes,
             'caps': caps,
-            'caps_len': caps_len
+            'caps_len': caps_len,
+            'view': view
         }
 
 

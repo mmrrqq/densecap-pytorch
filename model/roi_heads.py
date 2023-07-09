@@ -7,6 +7,12 @@ from torchvision.ops import boxes as box_ops
 from torchvision.models.detection import _utils as det_utils
 
 
+def predict_view_loss(view_predicts, gt_views):        
+    view_loss = F.cross_entropy(view_predicts, gt_views)
+
+    return view_loss
+
+
 def detect_loss(class_logits, box_regression, labels, regression_targets):
     """
     Computes the loss for detection part.
@@ -72,6 +78,7 @@ class DenseCapRoIHeads(nn.Module):
 
     def __init__(self,
                  box_describer,
+                 view_head,
                  box_roi_pool,
                  box_head,
                  box_predictor,
@@ -109,6 +116,8 @@ class DenseCapRoIHeads(nn.Module):
         self.box_head = box_head
         self.box_predictor = box_predictor
         self.box_describer = box_describer
+
+        self.view_head = view_head
 
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
@@ -177,6 +186,7 @@ class DenseCapRoIHeads(nn.Module):
         gt_captions_length = [t["caps_len"].to(device) for t in targets]
         gt_labels = [torch.ones((t["boxes"].shape[0],), dtype=torch.int64, device=device) for t in
                      targets]  # generate labels LongTensor(1)
+        gt_views = [t["view"] if "view" in t else None for t in targets]
 
         # append ground-truth bboxes to propos
         # List[2*N,4],一个list是一张图片
@@ -206,10 +216,10 @@ class DenseCapRoIHeads(nn.Module):
 
         regression_targets = self.box_coder.encode(matched_gt_boxes, proposals)
 
-        return proposals, matched_idxs, gt_captions, gt_captions_length, labels, regression_targets
+        return proposals, matched_idxs, gt_captions, gt_captions_length, labels, regression_targets, gt_views
 
     def postprocess_detections(self, logits, box_regression, caption_predicts, proposals, image_shapes,
-                               box_features, return_features):
+                               box_features, return_features, view_predicts):
         device = logits.device
         num_classes = logits.shape[-1]
 
@@ -221,6 +231,7 @@ class DenseCapRoIHeads(nn.Module):
         pred_boxes_list = pred_boxes.split(boxes_per_image, 0)
         pred_scores_list = pred_scores.split(boxes_per_image, 0)
         pred_caption_list = caption_predicts.split(boxes_per_image, 0)
+        pred_predicts_list = view_predicts.split(boxes_per_image, 0)
         if return_features:
             pred_box_features_list = box_features.split(boxes_per_image, 0)
         else:
@@ -231,20 +242,27 @@ class DenseCapRoIHeads(nn.Module):
         all_labels = []
         all_captions = []
         all_box_features = []
+        all_view_predicts = []
         remove_inds_list = []
         keep_list = []
-        for boxes, scores, captions, image_shape in zip(pred_boxes_list, pred_scores_list, pred_caption_list,
-                                                        image_shapes):
+        for boxes, scores, captions, image_shape, views in zip(pred_boxes_list, pred_scores_list, pred_caption_list,
+                                                        image_shapes, pred_predicts_list):
             boxes = box_ops.clip_boxes_to_image(boxes, image_shape)
 
             # create labels for each prediction
             labels = torch.arange(num_classes, device=device)
             labels = labels.view(1, -1).expand_as(scores)
 
+            print(boxes.shape)
+            print(views.shape)
+
             # remove predictions with the background label
             boxes = boxes[:, 1:]
             scores = scores[:, 1:]
             labels = labels[:, 1:]
+
+            print(boxes.shape)
+            print("TODO: FIX VIEW PREDICT!")
 
             # batch everything, by making every class prediction be a separate instance
             boxes = boxes.reshape(-1, 4)
@@ -296,39 +314,47 @@ class DenseCapRoIHeads(nn.Module):
                 assert t["caps_len"].device == torch.device("cpu"), 'target caps_len must be cpu tensor'
 
         if self.training:
-            proposals, matched_idxs, caption_gt, caption_length, labels, regression_targets = \
-                self.select_training_samples(proposals, targets)
+            proposals, matched_idxs, caption_gt, caption_length, labels, regression_targets, gt_views = \
+                self.select_training_samples(proposals, targets)                        
         else:
             labels = None
             matched_idxs = None
             caption_gt = None
             caption_length = None
             regression_targets = None
+            gt_views = None
 
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
-        logits, box_regression = self.box_predictor(box_features)
+        logits, box_regression = self.box_predictor(box_features)                
+
         if self.training:
             # labels 到这里应该是有0和（1，class-1），0代表背景，其余代表类别，需要剔除背景，然后进行描述(List[Tensor])
             # 也需要滤除对应的caption和caption_length
             keep_ids = [label>0 for label in labels]
-            boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]
+            boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]            
             box_features = box_features.split(boxes_per_image, 0)
+            gt_views = [v.repeat(n_boxes) for n_boxes, v in zip(boxes_per_image, gt_views)]        
             box_features_gt = []
             for i in range(len(keep_ids)):
                 box_features_gt.append(box_features[i][keep_ids[i]])
                 caption_gt[i] = caption_gt[i][keep_ids[i]]
                 caption_length[i] = caption_length[i][keep_ids[i]]
+                gt_views[i] = gt_views[i][keep_ids[i]]
             box_features = torch.cat(box_features_gt, 0)
-
-        caption_predicts = self.box_describer(box_features, caption_gt, caption_length)
+            gt_views = torch.cat(gt_views, 0)
+        
+        view_predicts = self.view_head(box_features)
+        caption_predicts = self.box_describer(box_features, caption_gt, caption_length)        
 
         result, losses = [], {}
         if self.training:
+            loss_view_predictor = predict_view_loss(view_predicts, gt_views)
             loss_classifier, loss_box_reg = detect_loss(logits, box_regression, labels, regression_targets)
             loss_caption = caption_loss(caption_predicts, caption_gt, caption_length)
 
             losses = {
+                "loss_view_predictor": loss_view_predictor,
                 "loss_classifier": loss_classifier,
                 "loss_box_reg": loss_box_reg,
                 "loss_caption": loss_caption
@@ -338,6 +364,7 @@ class DenseCapRoIHeads(nn.Module):
                                                                                  caption_predicts, proposals,
                                                                                  image_shapes, box_features,
                                                                                  self.return_features)
+                        
             num_images = len(boxes)
             for i in range(num_images):
                 result.append(
@@ -345,6 +372,7 @@ class DenseCapRoIHeads(nn.Module):
                         "boxes": boxes[i],
                         "caps": caption_predicts[i],
                         "scores": scores[i],
+                        "views": view_predicts
                     }
                 )
                 if self.return_features:

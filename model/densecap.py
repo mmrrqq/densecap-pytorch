@@ -18,7 +18,6 @@ __all__ = [
 
 
 class DenseCapModel(GeneralizedRCNN):
-
     def __init__(self, backbone, return_features = False,
                  # Caption parameters
                  box_describer=None,
@@ -36,6 +35,7 @@ class DenseCapModel(GeneralizedRCNN):
                  rpn_fg_iou_thresh=0.7, rpn_bg_iou_thresh=0.3,
                  rpn_batch_size_per_image=256, rpn_positive_fraction=0.5,
                  # Box parameters
+                 view_head=None, n_views=4,                
                  box_roi_pool=None, box_head=None, box_predictor=None,
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
@@ -91,6 +91,12 @@ class DenseCapModel(GeneralizedRCNN):
             box_head = TwoMLPHead(
                 out_channels * resolution ** 2,
                 representation_size)
+            
+        if view_head is None:
+            representation_size = 4096 if feat_size is None else feat_size
+            view_head = TwoMLPHead(
+                representation_size,
+                n_views)
 
         if box_predictor is None:
             representation_size = 4096 if feat_size is None else feat_size
@@ -107,6 +113,7 @@ class DenseCapModel(GeneralizedRCNN):
             # Caption
             box_describer,
             # Box
+            view_head,
             box_roi_pool, box_head, box_predictor,
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,

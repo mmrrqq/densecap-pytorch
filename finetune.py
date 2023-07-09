@@ -41,7 +41,7 @@ def load_model(model_config_path: Path, checkpoint_path: Path, return_features=F
                                   box_detections_per_img=box_per_img)
 
     checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['model'])
+    model.load_state_dict(checkpoint['model'], strict=False)
 
     if verbose and 'results_on_val' in checkpoint.keys():
         print('[INFO]: checkpoint {} loaded'.format(checkpoint_path))
@@ -86,11 +86,14 @@ def main():
 
             losses = model(img, targets)
 
+            assert "loss_view_predictor" in losses.keys(), "view loss not included!"
+
             detect_loss = losses['loss_objectness'] + losses['loss_rpn_box_reg'] + \
                             losses['loss_classifier'] + losses['loss_box_reg']
             caption_loss = losses['loss_caption']
+            view_predict_loss = losses["loss_view_predictor"]
 
-            total_loss = 1.0 * detect_loss + 1.0 * caption_loss        
+            total_loss = 0.1 * detect_loss + 1.0 * caption_loss + 1.0 * view_predict_loss
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -104,6 +107,7 @@ def main():
             writer.add_scalar('details/loss_rpn_box_reg', losses['loss_rpn_box_reg'].item(), iter_counter)
             writer.add_scalar('details/loss_classifier', losses['loss_classifier'].item(), iter_counter)
             writer.add_scalar('details/loss_box_reg', losses['loss_box_reg'].item(), iter_counter)
+            writer.add_scalar('details/loss_view_predictor', losses['loss_view_predictor'].item(), iter_counter)
 
             if iter_counter > 0 and iter_counter % 200 == 0:
                 try:
