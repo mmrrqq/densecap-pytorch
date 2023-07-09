@@ -219,7 +219,7 @@ class DenseCapRoIHeads(nn.Module):
         return proposals, matched_idxs, gt_captions, gt_captions_length, labels, regression_targets, gt_views
 
     def postprocess_detections(self, logits, box_regression, caption_predicts, proposals, image_shapes,
-                               box_features, return_features, view_predicts):
+                               box_features, view_predicts, return_features):
         device = logits.device
         num_classes = logits.shape[-1]
 
@@ -251,18 +251,14 @@ class DenseCapRoIHeads(nn.Module):
 
             # create labels for each prediction
             labels = torch.arange(num_classes, device=device)
-            labels = labels.view(1, -1).expand_as(scores)
-
-            print(boxes.shape)
-            print(views.shape)
+            labels = labels.view(1, -1).expand_as(scores)            
 
             # remove predictions with the background label
             boxes = boxes[:, 1:]
             scores = scores[:, 1:]
             labels = labels[:, 1:]
 
-            print(boxes.shape)
-            print("TODO: FIX VIEW PREDICT!")
+            # TODO: FIX VIEW PREDICT!
 
             # batch everything, by making every class prediction be a separate instance
             boxes = boxes.reshape(-1, 4)
@@ -362,7 +358,7 @@ class DenseCapRoIHeads(nn.Module):
         else:
             boxes, scores, caption_predicts, feats = self.postprocess_detections(logits, box_regression,
                                                                                  caption_predicts, proposals,
-                                                                                 image_shapes, box_features,
+                                                                                 image_shapes, box_features, view_predicts,
                                                                                  self.return_features)
                         
             num_images = len(boxes)
