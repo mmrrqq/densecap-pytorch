@@ -20,8 +20,8 @@ IMG_DIR_ROOT = '../3-dance/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
 BATCH_SIZE = 8
-CAP_LR = 1e-4
-LR = 1e-5
+CAP_LR = 1e-5
+LR = 1e-6
 WEIGHT_DECAY = 0
 
 
