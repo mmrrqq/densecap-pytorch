@@ -94,8 +94,9 @@ class DenseCapModel(GeneralizedRCNN):
             
         if view_head is None:
             representation_size = 4096 if feat_size is None else feat_size
-            view_head = TwoMLPHead(
+            view_head = ViewHead(
                 representation_size,
+                64,
                 n_views)
 
         if box_predictor is None:
@@ -129,6 +130,31 @@ class DenseCapModel(GeneralizedRCNN):
         transform = GeneralizedRCNNTransform(min_size, max_size, image_mean, image_std)
 
         super(DenseCapModel, self).__init__(backbone, rpn, roi_heads, transform)
+
+
+class ViewHead(nn.Module):
+    """
+    Standard heads for FPN-based models
+
+    Arguments:
+        in_channels (int): number of input channels
+        hidden_size (int): hidden layer size
+        n_classes (int): numer of output classes
+    """
+
+    def __init__(self, in_channels, hidden_size, n_classes):
+        super(ViewHead, self).__init__()
+
+        self.fc6 = nn.Linear(in_channels, hidden_size)
+        self.fc7 = nn.Linear(hidden_size, n_classes)
+
+    def forward(self, x):
+        x = x.flatten(start_dim=1)
+
+        x = F.relu(self.fc6(x))
+        x = self.fc7(x)
+
+        return x
 
 
 class TwoMLPHead(nn.Module):
