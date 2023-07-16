@@ -49,6 +49,21 @@ def detect_loss(class_logits, box_regression, labels, regression_targets):
     return classification_loss, box_loss
 
 
+def query_caption_loss(caption_predicts, caption_gt) -> torch.Tensor:
+    """
+    Computes the loss for caption part.
+    Arguments:
+        caption_predicts (Tensor)
+        caption_gt (Tensor or list[Tensor])
+        caption_length (Tensor or list[Tensor])
+        caption_loss (Tensor)
+    """
+
+    caption_gt = caption_gt[:, 1:]    
+
+    return F.cross_entropy(caption_predicts.permute((0, 2, 1)), caption_gt, reduction='none')
+
+
 def caption_loss(caption_predicts, caption_gt, caption_length):
     """
     Computes the loss for caption part.
@@ -69,7 +84,7 @@ def caption_loss(caption_predicts, caption_gt, caption_length):
 
     predict_pps = pack_padded_sequence(caption_predicts, caption_length, batch_first=True, enforce_sorted=False)
 
-    target_pps = pack_padded_sequence(caption_gt[:, 1:], caption_length, batch_first=True, enforce_sorted=False)
+    target_pps = pack_padded_sequence(caption_gt[:, 1:], caption_length, batch_first=True, enforce_sorted=False)    
 
     return F.cross_entropy(predict_pps.data, target_pps.data)
 
@@ -225,12 +240,13 @@ class DenseCapRoIHeads(nn.Module):
 
         boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]
         pred_boxes = self.box_coder.decode(box_regression, proposals)
-
-        pred_scores = F.softmax(logits, -1)
+        
+        pred_scores = F.softmax(logits, -1)        
+        view_predicts = F.softmax(view_predicts, -1)        
 
         pred_boxes_list = pred_boxes.split(boxes_per_image, 0)
         pred_scores_list = pred_scores.split(boxes_per_image, 0)
-        pred_caption_list = caption_predicts.split(boxes_per_image, 0)
+        pred_caption_list = caption_predicts.split(boxes_per_image, 0)        
         pred_predicts_list = view_predicts.split(boxes_per_image, 0)
         if return_features:
             pred_box_features_list = box_features.split(boxes_per_image, 0)
@@ -258,39 +274,38 @@ class DenseCapRoIHeads(nn.Module):
             scores = scores[:, 1:]
             labels = labels[:, 1:]
 
-            # TODO: FIX VIEW PREDICT!
-
             # batch everything, by making every class prediction be a separate instance
             boxes = boxes.reshape(-1, 4)
             scores = scores.reshape(-1)
-            labels = labels.reshape(-1)
+            labels = labels.reshape(-1)            
 
             # remove low scoring boxes
             inds = torch.nonzero(scores > self.score_thresh).squeeze(1)
             remove_inds_list.append(inds)
-            boxes, scores, captions, labels = boxes[inds], scores[inds], captions[inds], labels[inds]
+            boxes, scores, captions, labels, views = boxes[inds], scores[inds], captions[inds], labels[inds], views[inds]
 
             # remove empty boxes
             keep = box_ops.remove_small_boxes(boxes, min_size=1e-2)
-            boxes, scores, captions, labels = boxes[keep], scores[keep], captions[keep], labels[keep]
+            boxes, scores, captions, labels, views = boxes[keep], scores[keep], captions[keep], labels[keep], views[keep]
 
             # non-maximum suppression, independently done per class
             keep = box_ops.batched_nms(boxes, scores, labels, self.nms_thresh)
             # keep only topk scoring predictions
             keep = keep[:self.detections_per_img]
             keep_list.append(keep)
-            boxes, scores, captions, labels = boxes[keep], scores[keep], captions[keep], labels[keep]
+            boxes, scores, captions, labels, views = boxes[keep], scores[keep], captions[keep], labels[keep], views[keep]
 
             all_boxes.append(boxes)
             all_scores.append(scores)
             all_captions.append(captions)
             all_labels.append(labels)
+            all_view_predicts.append(views)
 
         if return_features:
             for inds, keep, box_features in zip(remove_inds_list, keep_list, pred_box_features_list):
                 all_box_features.append(box_features[inds[keep]//(num_classes-1)])
 
-        return all_boxes, all_scores, all_captions, all_box_features
+        return all_boxes, all_scores, all_captions, all_box_features, all_view_predicts
 
     def forward(self, features, proposals, image_shapes, targets=None):
         """
@@ -356,22 +371,87 @@ class DenseCapRoIHeads(nn.Module):
                 "loss_caption": loss_caption
             }
         else:
-            boxes, scores, caption_predicts, feats = self.postprocess_detections(logits, box_regression,
+            boxes, scores, caption_predicts, feats, view_scores = self.postprocess_detections(logits, box_regression,
                                                                                  caption_predicts, proposals,
                                                                                  image_shapes, box_features, view_predicts,
                                                                                  self.return_features)
                         
             num_images = len(boxes)
-            for i in range(num_images):
+            for i in range(num_images):                
                 result.append(
                     {
                         "boxes": boxes[i],
                         "caps": caption_predicts[i],
                         "scores": scores[i],
-                        "views": view_predicts
+                        "views": view_scores[i].argmax(dim=1)
                     }
                 )
                 if self.return_features:
                     result[-1]['feats'] = feats[i]
 
         return result, losses
+    
+
+    def forward_query(self, features, proposals, image_shapes, target_query, target_view):
+        box_features = self.box_roi_pool(features, proposals, image_shapes)
+        box_features = self.box_head(box_features)        
+        # logits, box_regression = self.box_predictor(box_features)
+        view_predicts = self.view_head(box_features)        
+
+        batch_size, _ = box_features.shape                
+        target_embeddings = target_query.expand(batch_size, -1)        
+        target_lens = (target_query != 0).sum(dim=1)        
+        target_lens = target_lens.expand(batch_size)
+        
+        caption_predicts = self.box_describer.forward_train(box_features, target_embeddings, target_lens)
+        boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]            
+
+        view_predicts = view_predicts.split(boxes_per_image, 0)
+        view_predicts = torch.cat(view_predicts, 0)        
+        gt_views = [v.repeat(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]        
+        gt_views = torch.cat(gt_views, 0)        
+
+        loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
+        loss_caption = query_caption_loss(caption_predicts, target_embeddings, target_lens)        
+
+        print(f"caption loss: {loss_caption.shape}")
+        print(f"box features: {box_features.shape}")
+        box_mean_caption_loss = loss_caption.mean(dim=1)
+        min_loss_index = box_mean_caption_loss.argmin()        
+        print(f"min loss: {box_mean_caption_loss[min_loss_index]}")
+        print(f"box features at min index: {box_features[min_loss_index].shape}")
+        min_caption_predicts = self.box_describer.forward_test(box_features[min_loss_index].unsqueeze(dim=0))
+        losses = {
+            "min": box_mean_caption_loss[min_loss_index],
+            "mean": box_mean_caption_loss.mean(),
+            "std": box_mean_caption_loss.std()
+        }
+        loss_caption = box_mean_caption_loss[min_loss_index]
+
+        # caption_predicts = caption_predicts.log_softmax(dim=-1).argmax(dim=-1)
+        
+        # boxes, scores, caption_predicts, feats, view_scores = self.postprocess_detections(logits, box_regression,
+        #                                                                          caption_predicts, proposals,
+        #                                                                          image_shapes, box_features, view_predicts,
+        #                                                                          self.return_features)
+                
+        result = []
+        # num_images = len(boxes)
+        # for i in range(num_images):                
+        #     result.append(
+        #         {
+        #             "boxes": boxes[i],
+        #             "caps": caption_predicts[i],
+        #             "scores": scores[i],
+        #             "views": view_scores[i].argmax(dim=1)
+        #         }
+        #     )
+        #     if self.return_features:
+        #         result[-1]['feats'] = feats[i]
+
+        return {
+            "view_predictor": loss_view_predictor,
+            "caption": loss_caption
+        }, result
+           
+

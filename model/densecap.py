@@ -1,4 +1,6 @@
+from typing import List
 from torch import nn
+import torch
 import torch.nn.functional as F
 from torchvision.models._api import WeightsEnum, get_weight
 
@@ -10,6 +12,7 @@ from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 
 from model.box_describer import BoxDescriber
 from model.roi_heads import DenseCapRoIHeads
+from preprocess import encode_caption, words_preprocess
 
 
 __all__ = [
@@ -35,12 +38,14 @@ class DenseCapModel(GeneralizedRCNN):
                  rpn_fg_iou_thresh=0.7, rpn_bg_iou_thresh=0.3,
                  rpn_batch_size_per_image=256, rpn_positive_fraction=0.5,
                  # Box parameters
-                 view_head=None, n_views=4,                
+                 view_head=None, n_views=8,                
                  box_roi_pool=None, box_head=None, box_predictor=None,
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
                  box_batch_size_per_image=512, box_positive_fraction=0.25,
-                 bbox_reg_weights=None):
+                 bbox_reg_weights=None,
+                 fixed_size=(512, 512),
+                 token_to_idx=None):
 
         if not hasattr(backbone, "out_channels"):
             raise ValueError(
@@ -127,9 +132,34 @@ class DenseCapModel(GeneralizedRCNN):
             image_mean = [0.485, 0.456, 0.406]
         if image_std is None:
             image_std = [0.229, 0.224, 0.225]
-        transform = GeneralizedRCNNTransform(min_size, max_size, image_mean, image_std)
+        transform = GeneralizedRCNNTransform(min_size, max_size, image_mean, image_std, fixed_size=fixed_size)
+
+        self.token_to_idx = token_to_idx
 
         super(DenseCapModel, self).__init__(backbone, rpn, roi_heads, transform)
+
+
+    def tokenize(self, captions: List[str]):
+        tokenized_captions = []
+
+        for caption in captions:
+            caption = words_preprocess(caption)
+            tokenized = encode_caption(caption, self.token_to_idx, max_token_length=15)
+            tokenized_captions.append(torch.tensor(tokenized, dtype=torch.long))
+
+        return torch.stack(tokenized_captions)
+
+
+    def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: List[int]):        
+        images, _ = self.transform(target_images, None)
+        tokenized_captions = self.tokenize(captions)        
+
+        features = self.backbone(images.tensors)
+        proposals, _ = self.rpn(images, features, None)
+        losses = self.roi_heads.forward_query(features, proposals, images.image_sizes, tokenized_captions, views)
+
+        return losses
+
 
 
 class ViewHead(nn.Module):

@@ -57,8 +57,8 @@ class BoxDescriber(nn.Module):
 
         batch_size = feat.shape[0]
         device = feat.device
-
-        word_emb = self.embedding_layer(cap_gt)  # (batch_size, max_len, embed_size)
+        
+        word_emb = self.embedding_layer(cap_gt)  # (batch_size, max_len, embed_size)        
         feat_emb = self.feature_project_layer(feat)  # (batch_size, embed_size)
 
         h0, c0 = self.init_hidden(batch_size, device)
@@ -66,7 +66,7 @@ class BoxDescriber(nn.Module):
             _, (h0, c0) = self.rnn(feat_emb.unsqueeze(1), (h0, c0))  # first input projected feat emb to rnn
 
         cap_lens = cap_lens.cpu()
-        rnn_input_pps = pack_padded_sequence(word_emb, lengths=cap_lens, batch_first=True, enforce_sorted=False)
+        rnn_input_pps = pack_padded_sequence(word_emb, lengths=cap_lens, batch_first=True, enforce_sorted=False)        
 
         rnn_output_pps, _ = self.rnn(rnn_input_pps, (h0, c0))
 

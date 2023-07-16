@@ -55,7 +55,7 @@ def load_model(model_config_path: Path, checkpoint_path: Path, return_features=F
 
 
 def main():
-    params_path = Path("model_params")
+    params_path = Path("compute_model_params")
     model_name = "without_aux"
     model = load_model(
         params_path / model_name / "config.json", 
@@ -79,8 +79,19 @@ def main():
     iter_counter = 0
     best_map = 0.
     writer = SummaryWriter()
+    # all_targets = []
+    # for _, targets in data_loader:
+    #     for target in targets:
+    #         all_targets.append(target["view"].item())
 
+    # all_targets = torch.tensor(all_targets)
+    # print((all_targets == 0).sum())
+    # print((all_targets == 1).sum())
+    # print((all_targets == 2).sum())
+    # print((all_targets == 3).sum())
+    
     for epoch in range(10):
+        results = quantity_check(model, val_set, idx_to_token, device, verbose=False)
         for img, targets in tqdm(data_loader):
             img = [img_tensor.to(device) for img_tensor in img]
             targets = [{k: v.to(device) for k, v in target.items()} for target in targets]
