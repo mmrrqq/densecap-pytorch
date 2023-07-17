@@ -406,9 +406,12 @@ class DenseCapRoIHeads(nn.Module):
         caption_predicts = self.box_describer.forward_train(box_features, target_embeddings, target_lens)
         boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]            
 
-        view_predicts = view_predicts.split(boxes_per_image, 0)
-        view_predicts = torch.cat(view_predicts, 0)
-        gt_views = [v.repeat(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]        
+        # print(view_predicts.shape)
+        # view_predicts = view_predicts.split(boxes_per_image, 0)
+        # print(len(view_predicts))
+        # view_predicts = torch.cat(view_predicts, 0)
+        # print(view_predicts.shape)        
+        gt_views = [v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]
         gt_views = torch.cat(gt_views, 0).to(view_predicts.device)
 
         loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
