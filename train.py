@@ -80,7 +80,7 @@ def set_args():
 
 def save_model(model, optimizer, scaler, results_on_val, iter_counter, flag=None):
     state = {'model': model.state_dict(),
-             'optimizer': optimizer.state_dict(),
+             'optimizer': optimizer.state_dict() if optimizer is not None else None,
              'scaler': scaler.state_dict() if scaler is not None else None,
              'results_on_val': results_on_val,
              'iterations': iter_counter}

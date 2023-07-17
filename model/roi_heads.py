@@ -434,9 +434,9 @@ class DenseCapRoIHeads(nn.Module):
         losses = {
             "view": loss_view_predictor, 
             "caption_min": box_mean_caption_loss[min_loss_index],
-            "caption_view_min": box_mean_caption_loss[min_loss_index_per_view]
-            # "caption_mean": box_mean_caption_loss.mean(),
-            # "caption_std": box_mean_caption_loss.std()
+            "caption_view_min": box_mean_caption_loss[min_loss_index_per_view],
+            "caption_mean": box_mean_caption_loss.mean(),
+            "caption_std": box_mean_caption_loss.std()
         }                
 
         return losses, (min_caption_predicts[0], min_caption_predicts_per_view)
