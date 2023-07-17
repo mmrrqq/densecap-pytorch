@@ -84,14 +84,17 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
                 print("skip non visual")
                 continue
 
-            key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
-            key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
             annotation = annotation[0]
             
             if gt_idx > 0:
                 key1_imgs, key2_imgs = key2_imgs, key1_imgs
                     
+            key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
             losses1, (min_loss_cap1, other_min_caps1) = model.query_caption(key1_imgs, [annotation], view_ids)        
+
+            del key1_imgs
+
+            key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
             losses2, (min_loss_cap2, other_min_caps2) = model.query_caption(key2_imgs, [annotation], view_ids)                
 
             print(f"gt annot: {annotation}")
