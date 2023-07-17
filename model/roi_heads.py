@@ -407,23 +407,37 @@ class DenseCapRoIHeads(nn.Module):
         boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]            
 
         view_predicts = view_predicts.split(boxes_per_image, 0)
-        view_predicts = torch.cat(view_predicts, 0)        
+        view_predicts = torch.cat(view_predicts, 0)
         gt_views = [v.repeat(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]        
-        gt_views = torch.cat(gt_views, 0)        
+        gt_views = torch.cat(gt_views, 0).to(features.device)
 
         loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
         loss_caption = query_caption_loss(caption_predicts, target_embeddings)        
         
-        box_mean_caption_loss = loss_caption.mean(dim=1)
-        min_loss_index = box_mean_caption_loss.argmin()                
+        box_mean_caption_loss = loss_caption.mean(dim=1)        
+
+        index_mapping = torch.arange(len(box_mean_caption_loss))
+        index_mapping = index_mapping.split(boxes_per_image, 0)
+        index_mapping = torch.stack(index_mapping)        
+
+        loss_caption_per_view = box_mean_caption_loss.split(boxes_per_image, 0)        
+        loss_caption_per_view = torch.stack(loss_caption_per_view)
+
+        min_loss_index_per_view = loss_caption_per_view.argmin(dim=1)
+        min_loss_index_per_view = torch.tensor([index_mapping[i, idx] for i, idx in enumerate(min_loss_index_per_view)])        
+
+        min_loss_index = box_mean_caption_loss.argmin()        
+
         min_caption_predicts = self.box_describer.forward_test(box_features[min_loss_index].unsqueeze(dim=0))
+        min_caption_predicts_per_view = self.box_describer.forward_test(box_features[min_loss_index_per_view])
         losses = {
             "view": loss_view_predictor, 
             "caption_min": box_mean_caption_loss[min_loss_index],
+            "caption_view_min": box_mean_caption_loss[min_loss_index_per_view]
             # "caption_mean": box_mean_caption_loss.mean(),
             # "caption_std": box_mean_caption_loss.std()
         }                
 
-        return losses, min_caption_predicts[0]
+        return losses, (min_caption_predicts[0], min_caption_predicts_per_view)
            
 
