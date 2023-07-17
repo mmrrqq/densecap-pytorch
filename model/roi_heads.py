@@ -420,14 +420,13 @@ class DenseCapRoIHeads(nn.Module):
         box_mean_caption_loss = loss_caption.mean(dim=1)        
 
         index_mapping = torch.arange(len(box_mean_caption_loss))
-        index_mapping = index_mapping.split(boxes_per_image, 0)
-        index_mapping = torch.stack(index_mapping)        
+        index_mapping = index_mapping.split(boxes_per_image, 0)        
 
         loss_caption_per_view = box_mean_caption_loss.split(boxes_per_image, 0)        
         loss_caption_per_view = torch.stack(loss_caption_per_view)
 
         min_loss_index_per_view = loss_caption_per_view.argmin(dim=1)
-        min_loss_index_per_view = torch.tensor([index_mapping[i, idx] for i, idx in enumerate(min_loss_index_per_view)])        
+        min_loss_index_per_view = torch.tensor([index_mapping[i][idx] for i, idx in enumerate(min_loss_index_per_view)])        
 
         min_loss_index = box_mean_caption_loss.argmin()        
 
