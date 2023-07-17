@@ -148,7 +148,7 @@ class DenseCapModel(GeneralizedRCNN):
 
         for caption in captions:
             caption = words_preprocess(caption)
-            tokenized = encode_caption(caption, self.token_to_idx, max_token_length=15)
+            tokenized = encode_caption(caption, self.token_to_idx, max_token_length=19)
             tokenized_captions.append(torch.tensor(tokenized, dtype=torch.long))
 
         return torch.stack(tokenized_captions)
