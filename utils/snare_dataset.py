@@ -42,10 +42,10 @@ class SnareDataset(torch.utils.data.Dataset):
             raise RuntimeError('mode not recognized, should be train, valid or test: ' + str(self.mode))
 
         # load amt data
+        self.keys = list([p.name for p in shapenet_base_path.iterdir() if p.is_dir()])
         self.data = []
         for file in self.files:
-            fname_rel = annotations_path / file
-            print(fname_rel)
+            fname_rel = annotations_path / file            
             with open(fname_rel, 'r') as f:
                 self.data = self.data + json.load(f)
 
@@ -91,17 +91,16 @@ class SnareDataset(torch.utils.data.Dataset):
             key1, key2 = entry['objects']
 
         # fix missing key in pair
-        else:
-            raise NotImplementedError
+        else:            
             key1 = entry['objects'][entry_idx]
-            while True:
-                key2 = np.random.choice(list(self.img_feats.keys())).split("-")[0]
+            while True:                
+                key2 = np.random.choice(self.keys).split("-")[0]
                 if key2 != key1:
                     break                    
 
         # annotation
         annotation = entry['annotation']
-        is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories
+        is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories        
 
         # load images for keys
         key1_imgs = self.get_imgs(key1)

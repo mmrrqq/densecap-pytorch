@@ -97,8 +97,7 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
         for batch in tqdm(data_loader):    
             (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch 
 
-            if not is_visual:
-                print("skip non visual")
+            if not is_visual or gt_idx < 0:
                 continue
 
             annotation = annotation[0]
@@ -147,7 +146,7 @@ def main():
     model.token_to_idx = token_to_idx
     
     model.toDevice(device)
-    test_set = SnareDataset(mode="test")
+    test_set = SnareDataset(mode="valid")
     train_set = SnareDataset(mode="train")
     test_loader = DataLoader(test_set, batch_size=1)
     train_loader = DataLoader(train_set, batch_size=1)
@@ -158,8 +157,8 @@ def main():
 
     for epoch in range(10):
         print(f"start epoch {epoch}")
-        iter_count = train(model, train_loader, iter_count, writer)
         acc = test(model, test_loader, idx_to_token)
+        iter_count = train(model, train_loader, iter_count, writer)
         writer.add_scalar('metric/test_accuracy', acc, iter_count)
         if acc > best_acc:
             best_acc = acc
