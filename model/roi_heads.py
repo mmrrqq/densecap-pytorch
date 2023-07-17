@@ -412,46 +412,18 @@ class DenseCapRoIHeads(nn.Module):
         gt_views = torch.cat(gt_views, 0)        
 
         loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
-        loss_caption = query_caption_loss(caption_predicts, target_embeddings, target_lens)        
-
-        print(f"caption loss: {loss_caption.shape}")
-        print(f"box features: {box_features.shape}")
+        loss_caption = query_caption_loss(caption_predicts, target_embeddings)        
+        
         box_mean_caption_loss = loss_caption.mean(dim=1)
-        min_loss_index = box_mean_caption_loss.argmin()        
-        print(f"min loss: {box_mean_caption_loss[min_loss_index]}")
-        print(f"box features at min index: {box_features[min_loss_index].shape}")
+        min_loss_index = box_mean_caption_loss.argmin()                
         min_caption_predicts = self.box_describer.forward_test(box_features[min_loss_index].unsqueeze(dim=0))
         losses = {
-            "min": box_mean_caption_loss[min_loss_index],
-            "mean": box_mean_caption_loss.mean(),
-            "std": box_mean_caption_loss.std()
-        }
-        loss_caption = box_mean_caption_loss[min_loss_index]
+            "view": loss_view_predictor, 
+            "caption_min": box_mean_caption_loss[min_loss_index],
+            # "caption_mean": box_mean_caption_loss.mean(),
+            # "caption_std": box_mean_caption_loss.std()
+        }                
 
-        # caption_predicts = caption_predicts.log_softmax(dim=-1).argmax(dim=-1)
-        
-        # boxes, scores, caption_predicts, feats, view_scores = self.postprocess_detections(logits, box_regression,
-        #                                                                          caption_predicts, proposals,
-        #                                                                          image_shapes, box_features, view_predicts,
-        #                                                                          self.return_features)
-                
-        result = []
-        # num_images = len(boxes)
-        # for i in range(num_images):                
-        #     result.append(
-        #         {
-        #             "boxes": boxes[i],
-        #             "caps": caption_predicts[i],
-        #             "scores": scores[i],
-        #             "views": view_scores[i].argmax(dim=1)
-        #         }
-        #     )
-        #     if self.return_features:
-        #         result[-1]['feats'] = feats[i]
-
-        return {
-            "view_predictor": loss_view_predictor,
-            "caption": loss_caption
-        }, result
+        return losses, min_caption_predicts[0]
            
 

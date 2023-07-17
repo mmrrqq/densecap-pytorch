@@ -139,6 +139,10 @@ class DenseCapModel(GeneralizedRCNN):
         super(DenseCapModel, self).__init__(backbone, rpn, roi_heads, transform)
 
 
+    def toDevice(self, device):
+        self.device = device
+        self.to(device)
+        
     def tokenize(self, captions: List[str]):
         tokenized_captions = []
 
@@ -152,7 +156,7 @@ class DenseCapModel(GeneralizedRCNN):
 
     def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: List[int]):        
         images, _ = self.transform(target_images, None)
-        tokenized_captions = self.tokenize(captions)        
+        tokenized_captions = self.tokenize(captions).to(self.device)        
 
         features = self.backbone(images.tensors)
         proposals, _ = self.rpn(images, features, None)
