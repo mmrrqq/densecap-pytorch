@@ -79,6 +79,9 @@ def set_args():
 
 
 def save_model(model, optimizer, scaler, results_on_val, iter_counter, flag=None):
+    if not os.path.exists('model_params'):
+        os.makedirs('model_params')
+        
     state = {'model': model.state_dict(),
              'optimizer': optimizer.state_dict() if optimizer is not None else None,
              'scaler': scaler.state_dict() if scaler is not None else None,
