@@ -56,8 +56,7 @@ def train(model: DenseCapModel, data_loader: DataLoader, iter_offset: int = 0, w
     for batch in tqdm(data_loader):            
         (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch 
 
-        if not is_visual:
-            print("skip non visual")
+        if not is_visual or gt_idx < 0:          
             continue
 
         key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
