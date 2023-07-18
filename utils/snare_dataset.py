@@ -81,8 +81,34 @@ class SnareDataset(torch.utils.data.Dataset):
             imgs.append(intermediate_dict[keys[i]])
         
         return imgs
+    
+    def get_item_train(self, idx):
+        entry = self.data[idx]
+
+        # get keys
+        entry_idx = entry['ans'] if 'ans' in entry else -1 # test set does not contain answers        
+
+        key = entry['objects'][entry_idx]        
+
+        # annotation
+        annotation = entry['annotation']
+        is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories        
+
+        # load images for keys
+        imgs = self.get_imgs(key)
+
+        return (
+            imgs,            
+            entry_idx,
+            key,
+            annotation,
+            is_visual,
+        )
 
     def __getitem__(self, idx):
+        if self.mode == 'train':
+            return self.get_item_train(idx)
+
         entry = self.data[idx]
 
         # get keys

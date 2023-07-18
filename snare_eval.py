@@ -5,7 +5,7 @@ import pickle
 from typing import Optional
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 from finetune import load_model
@@ -19,6 +19,7 @@ VIEW_HEAD_LR = 1e-4
 CAP_LR = 1e-5
 LR = 1e-5
 WEIGHT_DECAY = 0
+ACCUMULATE_BATCH_SIZE = 32
 
 
 def print_decode_caption(cap: torch.Tensor, idx_to_token):
@@ -54,20 +55,16 @@ def train(model: DenseCapModel, data_loader: DataLoader, iter_offset: int = 0, w
     iter_count = iter_offset
     
     for batch in tqdm(data_loader):            
-        (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch 
-
-        if not is_visual or gt_idx < 0:          
-            continue
-
-        key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
-        key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
-        annotation = annotation[0]
+        imgs, gt_idxs, keys, annotation, is_visual = batch 
         
-        if gt_idx > 0:
-            key1_imgs, key2_imgs = key2_imgs, key1_imgs
+        if is_visual.sum() < data_loader.batch_size or (gt_idxs < 0).sum() > 0:
+            continue        
+
+        imgs = [img.squeeze().to(device) for img in imgs]
+        # key2_imgs = [k.squeeze().to(device) for k in key2_imgs] 
                 
-        losses, min_loss_cap = model.query_caption(key1_imgs, [annotation], view_ids)        
-        total_loss = losses['caption_min'] + losses['view']
+        losses, min_loss_cap = model.query_caption(imgs, annotation, view_ids)        
+        total_loss = losses['caption_min'] + losses['view']        
 
         if writer is not None:
             writer.add_scalar('batch_loss/total', total_loss.item(), iter_count)
@@ -76,9 +73,12 @@ def train(model: DenseCapModel, data_loader: DataLoader, iter_offset: int = 0, w
             writer.add_scalar('batch_loss/std_cap', losses['caption_std'].item(), iter_count)            
             writer.add_scalar('batch_loss/view', losses['view'].item(), iter_count)
 
-        optimizer.zero_grad()
-        total_loss.backward()        
-        optimizer.step()
+        total_loss = total_loss / ACCUMULATE_BATCH_SIZE
+        total_loss.backward()
+
+        if ((iter_count + 1) % ACCUMULATE_BATCH_SIZE == 0) or (iter_count + 1 == len(data_loader)):
+            optimizer.zero_grad()		    
+            optimizer.step()        
 
         iter_count += 1        
             
@@ -146,9 +146,9 @@ def main():
     
     model.toDevice(device)
     test_set = SnareDataset(mode="valid")
+    
     train_set = SnareDataset(mode="train")
-    test_loader = DataLoader(test_set, batch_size=1)
-    train_loader = DataLoader(train_set, batch_size=1)
+    test_loader = DataLoader(test_set, batch_size=1)    
 
     writer = SummaryWriter()
     iter_count = 0
@@ -156,6 +156,10 @@ def main():
 
     for epoch in range(10):
         print(f"start epoch {epoch}")
+        rnd_indices = torch.randperm(len(train_set))[:2000]
+        rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
+        train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
+
         acc = test(model, test_loader, idx_to_token)
         iter_count = train(model, train_loader, iter_count, writer)
         writer.add_scalar('metric/test_accuracy', acc, iter_count)

@@ -396,8 +396,7 @@ class DenseCapRoIHeads(nn.Module):
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)        
         # logits, box_regression = self.box_predictor(box_features)
-        view_predicts = self.view_head(box_features)        
-
+        
         batch_size, _ = box_features.shape                
         target_embeddings = target_query.expand(batch_size, -1)        
         target_lens = (target_query != 0).sum(dim=1)        
@@ -410,11 +409,7 @@ class DenseCapRoIHeads(nn.Module):
         # view_predicts = view_predicts.split(boxes_per_image, 0)
         # print(len(view_predicts))
         # view_predicts = torch.cat(view_predicts, 0)
-        # print(view_predicts.shape)        
-        gt_views = [v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]
-        gt_views = torch.cat(gt_views, 0).to(view_predicts.device)
-
-        loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
+        # print(view_predicts.shape)                
         loss_caption = query_caption_loss(caption_predicts, target_embeddings)        
         
         box_mean_caption_loss = loss_caption.mean(dim=1)        
@@ -428,6 +423,12 @@ class DenseCapRoIHeads(nn.Module):
         min_loss_index_per_view = torch.tensor([index_mapping[i][idx] for i, idx in enumerate(min_loss_index_per_view)])        
 
         min_loss_index = box_mean_caption_loss.argmin()        
+
+        view_predicts = self.view_head(box_features[min_loss_index].unsqueeze(dim=0))
+        # TODO: extract view 
+        gt_views = [v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]
+        gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[min_loss_index].unsqueeze(dim=0)
+        loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
 
         min_caption_predicts = self.box_describer.forward_test(box_features[min_loss_index].unsqueeze(dim=0))
         min_caption_predicts_per_view = self.box_describer.forward_test(box_features[min_loss_index_per_view])

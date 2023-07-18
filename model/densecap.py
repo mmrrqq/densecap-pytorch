@@ -143,20 +143,21 @@ class DenseCapModel(GeneralizedRCNN):
         self.device = device
         self.to(device)
         
+    # TODO: do this prior to training time
     def tokenize(self, captions: List[str]):
         tokenized_captions = []
 
         for caption in captions:
             caption = words_preprocess(caption)
             tokenized = encode_caption(caption, self.token_to_idx, max_token_length=19)
-            tokenized_captions.append(torch.tensor(tokenized, dtype=torch.long))
+            tokenized_captions.append(torch.tensor(tokenized, dtype=torch.long, device=self.device))
 
         return torch.stack(tokenized_captions)
 
 
     def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: List[int]):        
         images, _ = self.transform(target_images, None)
-        tokenized_captions = self.tokenize(captions).to(self.device)        
+        tokenized_captions = self.tokenize(captions)
 
         features = self.backbone(images.tensors)
         proposals, _ = self.rpn(images, features, None)
