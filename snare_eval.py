@@ -77,8 +77,8 @@ def train(model: DenseCapModel, data_loader: DataLoader, iter_offset: int = 0, w
         total_loss.backward()
 
         if ((iter_count + 1) % ACCUMULATE_BATCH_SIZE == 0) or (iter_count + 1 == len(data_loader)):
-            optimizer.zero_grad()		    
-            optimizer.step()        
+            optimizer.step()
+            optimizer.zero_grad()
 
         iter_count += 1        
             
