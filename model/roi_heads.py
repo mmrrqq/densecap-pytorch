@@ -439,11 +439,23 @@ class DenseCapRoIHeads(nn.Module):
             gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[min_loss_index].unsqueeze(dim=0)
             total_loss += predict_view_loss(view_predicts, gt_views)
         if Loss.MULTIVIEW in self.losses:
+            view_features = box_features[min_loss_index_per_view]
+
+            # TODO: penalty for big distance of min matches for each view
 
         if Loss.MODEL_CONTRASTIVE in self.losses:
             # TODO: get second model features..
+            raise NotImplementedError("model contrastive loss not implemented")
         
-        if Loss.VIEW_CONTRASTIVE in self.losses
+        if Loss.VIEW_CONTRASTIVE in self.losses:
+            view_features = box_features[min_loss_index_per_view]
+            pseudo_labels = torch.arange(view_features.shape[0], device=self.device, dtype=int)
+
+            # TODO: do I need to normalize box features?!
+            total_loss += F.cross_entropy(view_features, pseudo_labels)
+
+
+        # TODO: I can also add both, model and view contrastive.. contrast all views of gt model to all other views of other model
 
         return total_loss
 
