@@ -1,3 +1,5 @@
+from enum import Enum
+from typing import List
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -5,6 +7,12 @@ from torch.nn.utils.rnn import pack_padded_sequence
 
 from torchvision.ops import boxes as box_ops
 from torchvision.models.detection import _utils as det_utils
+
+class Loss(Enum):
+    VIEW = 0,
+    MULTIVIEW = 1,
+    MODEL_CONTRASTIVE = 2,
+    VIEW_CONTRASTIVE = 3
 
 
 def predict_view_loss(view_predicts, gt_views):        
@@ -105,6 +113,7 @@ class DenseCapRoIHeads(nn.Module):
                  score_thresh,
                  nms_thresh,
                  detections_per_img,
+                 losses: List[str],
                  # Whether return features during testing
                  return_features=False,
                  ):
@@ -137,6 +146,19 @@ class DenseCapRoIHeads(nn.Module):
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
         self.detections_per_img = detections_per_img
+        # ["view", "multiview", "model_contrastive", "view_contrastive"]        
+        self.losses = [
+            Loss.VIEW 
+                if l == "view"
+                else Loss.MULTIVIEW if l == "multiview"
+                else Loss.MODEL_CONTRASTIVE if l == "model_contrastive"
+                else Loss.VIEW_CONTRASTIVE if l == "view_contrastive"
+                else None
+                for l in losses
+        ]
+
+        if None in self.losses:
+            raise Exception("invalid loss name argument")
 
     def assign_targets_to_proposals(self, proposals, gt_boxes, gt_labels):
 
@@ -392,27 +414,13 @@ class DenseCapRoIHeads(nn.Module):
         return result, losses
     
 
-    def forward_query(self, features, proposals, image_shapes, target_query, target_view):
-        box_features = self.box_roi_pool(features, proposals, image_shapes)
-        box_features = self.box_head(box_features)        
-        # logits, box_regression = self.box_predictor(box_features)
-        
-        batch_size, _ = box_features.shape                
-        target_embeddings = target_query.expand(batch_size, -1)        
-        target_lens = (target_query != 0).sum(dim=1)        
-        target_lens = target_lens.expand(batch_size)
-        
-        caption_predicts = self.box_describer.forward_train(box_features, target_embeddings, target_lens)
-        boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]            
-
-        # print(view_predicts.shape)
-        # view_predicts = view_predicts.split(boxes_per_image, 0)
-        # print(len(view_predicts))
-        # view_predicts = torch.cat(view_predicts, 0)
-        # print(view_predicts.shape)                
+    # TODO: add loss functions, return only one when inference
+    def gather_losses(self, box_features, caption_predicts, target_embeddings, boxes_per_image, target_view):
+        # ["view", "multiview", "model_contrastive", "view_contrastive"]
+        total_loss = torch.zeros((), device=self.device)
         loss_caption = query_caption_loss(caption_predicts, target_embeddings)        
         
-        box_mean_caption_loss = loss_caption.mean(dim=1)        
+        box_mean_caption_loss = loss_caption.mean(dim=1)
 
         index_mapping = torch.arange(len(box_mean_caption_loss))
         index_mapping = index_mapping.split(boxes_per_image, 0)        
@@ -425,10 +433,47 @@ class DenseCapRoIHeads(nn.Module):
         min_loss_index = box_mean_caption_loss.argmin()        
 
         view_predicts = self.view_head(box_features[min_loss_index].unsqueeze(dim=0))
+
+        if Loss.VIEW in self.losses:
+            gt_views = [v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]
+            gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[min_loss_index].unsqueeze(dim=0)
+            total_loss += predict_view_loss(view_predicts, gt_views)
+        if Loss.MULTIVIEW in self.losses:
+
+        if Loss.MODEL_CONTRASTIVE in self.losses:
+            # TODO: get second model features..
+        
+        if Loss.VIEW_CONTRASTIVE in self.losses
+
+        return total_loss
+
+
+    def forward_query(self, features, proposals, image_shapes, target_query, target_view):
+        box_features = self.box_roi_pool(features, proposals, image_shapes)
+        box_features = self.box_head(box_features)        
+        # logits, box_regression = self.box_predictor(box_features)
+        
+        batch_size, _ = box_features.shape                
+        target_embeddings = target_query.expand(batch_size, -1)
+        target_lens = (target_query != 0).sum(dim=1)        
+        target_lens = target_lens.expand(batch_size)
+        
+        caption_predicts = self.box_describer.forward_train(box_features, target_embeddings, target_lens)
+        boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]            
+
+        # print(view_predicts.shape)
+        # view_predicts = view_predicts.split(boxes_per_image, 0)
+        # print(len(view_predicts))
+        # view_predicts = torch.cat(view_predicts, 0)
+        # print(view_predicts.shape)                
+        
         # TODO: extract view 
-        gt_views = [v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)]
-        gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[min_loss_index].unsqueeze(dim=0)
-        loss_view_predictor = predict_view_loss(view_predicts, gt_views)                        
+        loss = self.gather_losses(
+            caption_predicts=caption_predicts, 
+            target_embeddings=target_embeddings, 
+            box_features=box_features, 
+            boxes_per_image=boxes_per_image, 
+            target_view=target_view)
 
         min_caption_predicts = self.box_describer.forward_test(box_features[min_loss_index].unsqueeze(dim=0))
         min_caption_predicts_per_view = self.box_describer.forward_test(box_features[min_loss_index_per_view])
