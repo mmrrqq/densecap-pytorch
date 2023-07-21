@@ -26,7 +26,11 @@ def get_args():
 
     parser.add_argument("--params_path", default="compute_model_params")
     parser.add_argument("--train", action="store_true", default=True)
-    parser.add_argument("--losses", nargs='+', default=["view", "multiview", "model_contrastive", "view_contrastive"])
+    parser.add_argument(
+        "--losses",
+        nargs="+",
+        default=["view", "multiview", "view_contrastive", "min_cap", "multiview_cap"],
+    )
 
     return parser.parse_args()
 
@@ -101,24 +105,15 @@ def train(
         imgs = [img.squeeze().to(device) for img in imgs]
         # key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
 
-        losses, min_loss_cap = model.query_caption(imgs, annotation, view_ids)
-        total_loss = losses["caption_min"] + losses["view"]
+        loss, loss_dict, _ = model.query_caption(imgs, annotation, view_ids)
 
         if writer is not None:
-            writer.add_scalar("batch_loss/total", total_loss.item(), iter_count)
-            writer.add_scalar(
-                "batch_loss/min_cap", losses["caption_min"].item(), iter_count
-            )
-            writer.add_scalar(
-                "batch_loss/mean_cap", losses["caption_mean"].item(), iter_count
-            )
-            writer.add_scalar(
-                "batch_loss/std_cap", losses["caption_std"].item(), iter_count
-            )
-            writer.add_scalar("batch_loss/view", losses["view"].item(), iter_count)
+            writer.add_scalar("batch_loss/total", loss.item(), iter_count)
+            for k, v in loss_dict.items():
+                writer.add_scalar(f"batch_loss/{k}", v.item(), iter_count)
 
-        total_loss = total_loss / ACCUMULATE_BATCH_SIZE
-        total_loss.backward()
+        loss = loss / ACCUMULATE_BATCH_SIZE
+        loss.backward()
 
         if ((iter_count + 1) % ACCUMULATE_BATCH_SIZE == 0) or (
             iter_count + 1 == len(data_loader)
@@ -155,33 +150,29 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
                 key1_imgs, key2_imgs = key2_imgs, key1_imgs
 
             key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
-            losses1, (min_loss_cap1, other_min_caps1) = model.query_caption(
-                key1_imgs, [annotation], view_ids
-            )
+            _, losses1, _ = model.query_caption(key1_imgs, [annotation], view_ids)
 
             del key1_imgs
 
             key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
-            losses2, (min_loss_cap2, other_min_caps2) = model.query_caption(
-                key2_imgs, [annotation], view_ids
-            )
+            _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
 
             # print(f"gt annot: {annotation}")
             n += 1
-            if losses2["caption_min"] > losses1["caption_min"]:
+            if losses2["cap_min"] > losses1["cap_min"]:
                 min_pos += 1
 
-            if losses2["caption_mean"] > losses1["caption_mean"]:
+            if losses2["cap_mean"] > losses1["cap_mean"]:
                 mean_pos += 1
 
-            if losses2["caption_std"] > losses1["caption_std"]:
+            if losses2["cap_std"] > losses1["cap_std"]:
                 std_pos += 1
 
-            if losses2["min_per_view_mean"] > losses1["min_per_view_mean"]:
+            if losses2["cap_min_per_view_mean"] > losses1["cap_min_per_view_mean"]:
                 min_per_view_mean_pos += 1
 
-            if losses2["min_per_view_std"] > losses1["min_per_view_std"]:
-                min_per_view_std_pos += 1
+            if losses2["cap_min_per_view_std"] > losses1["cap_min_per_view_std"]:
+                min_per_view_std_pos += 1            
 
     mean_acc = mean_pos / n
     std_acc = std_pos / n
@@ -192,10 +183,18 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
     print(
         f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nstd:\t{std_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nmin per view std:\t{min_per_view_std_acc}"
     )
-    return min_acc, mean_acc, std_acc, min_per_view_mean_acc, min_per_view_std_acc
+    return {
+        "min_acc": min_acc,
+        "mean_acc": mean_acc,
+        "std_acc": std_acc,
+        "min_per_view_mean_acc": min_per_view_mean_acc,
+        "min_per_view_std_acc": min_per_view_std_acc,
+    }
 
 
 def main():
+    args = get_args()
+    print(args.losses)
     lut_path = Path("./data/VG-regions-dicts-lite.pkl")
 
     with open(lut_path, "rb") as f:
@@ -210,6 +209,7 @@ def main():
         params_path / model_name / "config.json",
         params_path / (model_name + ".pth.tar"),
         return_features=False,
+        losses=args.losses,
     )
     model.token_to_idx = token_to_idx
 
@@ -229,12 +229,15 @@ def main():
         rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
         train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
 
-        acc = test(model, test_loader, idx_to_token)
+        acc_dict = test(model, test_loader, idx_to_token)
+        min_acc = acc_dict["min_acc"]
+        for k, v in acc_dict.items():
+            writer.add_scalar(f"metric/{k}", v, iter_count)
         iter_count = train(model, train_loader, iter_count, writer)
-        writer.add_scalar("metric/test_accuracy", acc, iter_count)
-        if acc > best_acc:
-            best_acc = acc
-            save_model(model, None, None, acc, iter_count)
+        f
+        if min_acc > best_acc:
+            best_acc = min_acc
+            save_model(model, None, None, min_acc, iter_count)
 
     save_model(model, None, None, best_acc, iter_count, flag="end")
 

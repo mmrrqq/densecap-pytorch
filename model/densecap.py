@@ -45,7 +45,8 @@ class DenseCapModel(GeneralizedRCNN):
                  box_batch_size_per_image=512, box_positive_fraction=0.25,
                  bbox_reg_weights=None,
                  fixed_size=(512, 512),
-                 token_to_idx=None):
+                 token_to_idx=None,
+                 losses = []):
 
         if not hasattr(backbone, "out_channels"):
             raise ValueError(
@@ -126,6 +127,7 @@ class DenseCapModel(GeneralizedRCNN):
             bbox_reg_weights,
             box_score_thresh, box_nms_thresh, box_detections_per_img,
             # Whether return features during testing
+            losses,
             return_features)
 
         if image_mean is None:
@@ -141,6 +143,7 @@ class DenseCapModel(GeneralizedRCNN):
 
     def toDevice(self, device):
         self.device = device
+        self.roi_heads.device = device
         self.to(device)
         
     # TODO: do this prior to training time

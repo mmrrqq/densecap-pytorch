@@ -26,7 +26,7 @@ LR = 1e-6
 WEIGHT_DECAY = 0
 
 
-def load_model(model_config_path: Path, checkpoint_path: Path, return_features=False, box_per_img=50, verbose=False):
+def load_model(model_config_path: Path, checkpoint_path: Path, return_features=False, box_per_img=50, verbose=False, **kwargs):
     with open(model_config_path, 'r') as f:
         model_args = json.load(f)
 
@@ -39,7 +39,8 @@ def load_model(model_config_path: Path, checkpoint_path: Path, return_features=F
                                   rnn_num_layers=model_args['rnn_num_layers'],
                                   vocab_size=model_args['vocab_size'],
                                   fusion_type=model_args['fusion_type'],
-                                  box_detections_per_img=box_per_img)
+                                  box_detections_per_img=box_per_img,
+                                  **kwargs)
 
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint['model'], strict=False)
