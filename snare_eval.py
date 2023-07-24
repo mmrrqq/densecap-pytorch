@@ -7,9 +7,8 @@ import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
-from finetune import load_model
+from utils.model_io import load_model, save_model
 from model.densecap import DenseCapModel
-from train import save_model
 from utils.snare_dataset import SnareDataset
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -211,6 +210,7 @@ def main():
         return_features=False,
         losses=args.losses,
     )
+    model.name = "_".join(args.losses)
     model.token_to_idx = token_to_idx
 
     model.toDevice(device)
@@ -234,7 +234,7 @@ def main():
         for k, v in acc_dict.items():
             writer.add_scalar(f"metric/{k}", v, iter_count)
         iter_count = train(model, train_loader, iter_count, writer)
-        f
+
         if min_acc > best_acc:
             best_acc = min_acc
             save_model(model, None, None, min_acc, iter_count)

@@ -46,7 +46,8 @@ class DenseCapModel(GeneralizedRCNN):
                  bbox_reg_weights=None,
                  fixed_size=(512, 512),
                  token_to_idx=None,
-                 losses = []):
+                 losses = [],
+                 name="densecap"):
 
         if not hasattr(backbone, "out_channels"):
             raise ValueError(
@@ -137,6 +138,7 @@ class DenseCapModel(GeneralizedRCNN):
         transform = GeneralizedRCNNTransform(min_size, max_size, image_mean, image_std, fixed_size=fixed_size)
 
         self.token_to_idx = token_to_idx
+        self.name = name
 
         super(DenseCapModel, self).__init__(backbone, rpn, roi_heads, transform)
 
