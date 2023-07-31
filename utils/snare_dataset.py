@@ -60,7 +60,12 @@ class SnareDataset(torch.utils.data.Dataset):
         intermediate_dict = {}        
         for p in model_path.iterdir():
             if p.is_file() and "png" in p.name:
-                view_id = int(self.view_id_regex.match(p.name).group(1))
+                view_id_match = self.view_id_regex.match(p.name)
+                if view_id_match is None:
+                    print(model_path)
+                    break
+
+                view_id = int(view_id_match.group(1))
                 if view_id < 6:  # discard first six canonical views
                     continue
 
