@@ -229,10 +229,7 @@ def train_loop(args):
     iter_count = 0
     best_acc = 0
 
-    for epoch in range(10):
-        A = DataLoader(train_set, batch_size=1)
-        for _ in tqdm(A):
-            continue
+    for epoch in range(10):        
         print(f"start epoch {epoch}")
         rnd_indices = torch.randperm(len(train_set))[:2000]
         rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
