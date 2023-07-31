@@ -60,10 +60,7 @@ class SnareDataset(torch.utils.data.Dataset):
         intermediate_dict = {}        
         for p in model_path.iterdir():
             if p.is_file() and "png" in p.name:
-                view_id_match = self.view_id_regex.match(p.name)
-                if view_id_match is None:
-                    print(model_path)
-                    break
+                view_id_match = self.view_id_regex.match(p.name)                
 
                 view_id = int(view_id_match.group(1))
                 if view_id < 6:  # discard first six canonical views
@@ -100,7 +97,7 @@ class SnareDataset(torch.utils.data.Dataset):
         is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories        
 
         # load images for keys
-        imgs = self.get_imgs(key)
+        imgs = self.get_imgs(key) if is_visual else None
 
         return (
             imgs,            
@@ -134,8 +131,8 @@ class SnareDataset(torch.utils.data.Dataset):
         is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories        
 
         # load images for keys
-        key1_imgs = self.get_imgs(key1)
-        key2_imgs = self.get_imgs(key2)                
+        key1_imgs = self.get_imgs(key1) if is_visual else None
+        key2_imgs = self.get_imgs(key2) if is_visual else None
 
         return (
             (key1_imgs, key2_imgs),            
