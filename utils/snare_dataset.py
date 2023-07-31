@@ -97,7 +97,7 @@ class SnareDataset(torch.utils.data.Dataset):
         is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories        
 
         # load images for keys
-        imgs = self.get_imgs(key) if is_visual else None
+        imgs = self.get_imgs(key) if is_visual else []
 
         return (
             imgs,            
@@ -131,8 +131,8 @@ class SnareDataset(torch.utils.data.Dataset):
         is_visual = entry['visual'] if 'ans' in entry else -1 # test set does not have labels for visual and non-visual categories        
 
         # load images for keys
-        key1_imgs = self.get_imgs(key1) if is_visual else None
-        key2_imgs = self.get_imgs(key2) if is_visual else None
+        key1_imgs = self.get_imgs(key1) if is_visual else []
+        key2_imgs = self.get_imgs(key2) if is_visual else []
 
         return (
             (key1_imgs, key2_imgs),            
