@@ -69,13 +69,13 @@ class SnareDataset(torch.utils.data.Dataset):
                 if view_id < 6:  # discard first six canonical views
                     continue
 
-                img = Image.open(p.absolute()).convert("RGB")
-                if self.transform is not None:
-                    img = self.transform(img)
-                else:
-                    img = transforms.ToTensor()(img)
+                # img = Image.open(p.absolute()).convert("RGB")
+                # if self.transform is not None:
+                #     img = self.transform(img)
+                # else:
+                #     img = transforms.ToTensor()(img)
                 
-                intermediate_dict[view_id] = img
+                # intermediate_dict[view_id] = img
 
         keys = list(intermediate_dict.keys()) 
         
