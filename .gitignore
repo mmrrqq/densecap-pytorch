@@ -136,6 +136,7 @@ debug_script.py
 data/
 model_params/
 compute_model_params/
+gpu_model_params/
 .vscode/
 result.json
 res/

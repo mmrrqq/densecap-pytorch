@@ -566,6 +566,18 @@ class DenseCapRoIHeads(nn.Module):
             loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
             loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[min_loss_index_per_view].mean()
             loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[min_loss_index_per_view].std()
+
+            view_predicts = self.view_head(box_features[min_loss_index_per_view])
+            gt_views = [
+                v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
+            ]
+            gt_views = (
+                torch.cat(gt_views, 0)
+                .to(view_predicts.device)[min_loss_index_per_view]                
+            )
+            _, view_predicts = view_predicts.max(dim=1)                     
+            loss_dict["view_preds"] = view_predicts
+
             return None, loss_dict, min_loss_index, min_loss_index_per_view
         
         if Loss.MIN_CAP in self.losses:
@@ -577,14 +589,13 @@ class DenseCapRoIHeads(nn.Module):
             ].mean()
 
         if Loss.VIEW in self.losses:
-            view_predicts = self.view_head(box_features[min_loss_index].unsqueeze(dim=0))
+            view_predicts = self.view_head(box_features[min_loss_index_per_view])
             gt_views = [
                 v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
             ]
             gt_views = (
                 torch.cat(gt_views, 0)
-                .to(view_predicts.device)[min_loss_index]
-                .unsqueeze(dim=0)
+                .to(view_predicts.device)[min_loss_index_per_view]                
             )
             loss_dict["view"] = predict_view_loss(view_predicts, gt_views)
 

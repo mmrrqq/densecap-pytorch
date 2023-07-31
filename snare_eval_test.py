@@ -13,7 +13,7 @@ from utils.snare_dataset import SnareDataset
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 # device = torch.device("cpu")
-VIEW_HEAD_LR = 1e-3
+VIEW_HEAD_LR = 1e-4
 CAP_LR = 1e-5
 LR = 1e-5
 WEIGHT_DECAY = 0
@@ -24,7 +24,7 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--params_path", default="compute_model_params")
-    parser.add_argument("--train", action="store_true", default=False)
+    parser.add_argument("--train", action="store_true", default=True)
     parser.add_argument(
         "--losses",
         nargs="+",
@@ -91,7 +91,7 @@ def train(
         ],
         lr=LR,
         weight_decay=WEIGHT_DECAY,
-    )    
+    )
 
     iter_count = iter_offset
 
@@ -135,8 +135,6 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
     mean_pos = 0
     min_per_view_std_pos = 0
     min_per_view_mean_pos = 0
-    view_pred_correct = 0
-    view_pred_total = 0
 
     with torch.no_grad():
         for batch in tqdm(data_loader):
@@ -173,21 +171,16 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
                 min_per_view_mean_pos += 1
 
             if losses2["cap_min_per_view_std"] > losses1["cap_min_per_view_std"]:
-                min_per_view_std_pos += 1
-
-            view_preds = losses1["view_preds"].cpu()
-            view_pred_total += len(view_preds)
-            view_pred_correct += (view_preds == view_ids).sum()            
+                min_per_view_std_pos += 1            
 
     mean_acc = mean_pos / n
     std_acc = std_pos / n
     min_acc = min_pos / n
     min_per_view_mean_acc = min_per_view_mean_pos / n
     min_per_view_std_acc = min_per_view_std_pos / n
-    view_pred_acc = view_pred_correct / view_pred_total
 
     print(
-        f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nstd:\t{std_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nmin per view std:\t{min_per_view_std_acc}\nview pred:\t{view_pred_acc}"
+        f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nstd:\t{std_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nmin per view std:\t{min_per_view_std_acc}"
     )
     return {
         "min_acc": min_acc,
@@ -198,7 +191,8 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
     }
 
 
-def train_loop(args):
+def main():
+    args = get_args()
     print(args.losses)
     lut_path = Path("./data/VG-regions-dicts-lite.pkl")
 
@@ -246,42 +240,6 @@ def train_loop(args):
             save_model(model, None, None, min_acc, iter_count)
 
     save_model(model, None, None, best_acc, iter_count, flag="end")
-
-
-def eval_loop(args):
-    lut_path = Path("./data/VG-regions-dicts-lite.pkl")
-
-    with open(lut_path, "rb") as f:
-        look_up_tables = pickle.load(f)
-
-    idx_to_token = look_up_tables["idx_to_token"]
-    token_to_idx = look_up_tables["token_to_idx"]
-
-    params_path = Path("gpu_model_params")
-    model_name = "with_aux"
-    model = load_model(
-        params_path / "config.json",
-        params_path / (model_name + ".pth.tar"),
-        return_features=False,
-        losses=args.losses,
-    )
-    model.name = "_".join(args.losses)
-    model.token_to_idx = token_to_idx
-
-    model.toDevice(device)
-    test_set = SnareDataset(mode="valid")
-
-    test_loader = DataLoader(test_set, batch_size=1)        
-
-    acc_dict = test(model, test_loader, idx_to_token)    
-
-
-def main():
-    args = get_args()
-    if args.train:
-        train_loop(args)
-    else:
-        eval_loop(args)
 
 
 if __name__ == "__main__":
