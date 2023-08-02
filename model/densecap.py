@@ -37,8 +37,9 @@ class DenseCapModel(GeneralizedRCNN):
                  rpn_nms_thresh=0.7,
                  rpn_fg_iou_thresh=0.7, rpn_bg_iou_thresh=0.3,
                  rpn_batch_size_per_image=256, rpn_positive_fraction=0.5,
-                 # Box parameters
-                 view_head=None, n_views=8,                
+                 # Box parameters                 
+                 view_head=None, n_views=8,
+                 view_predictor_head = None,
                  box_roi_pool=None, box_head=None, box_predictor=None,
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
@@ -116,12 +117,20 @@ class DenseCapModel(GeneralizedRCNN):
             representation_size = 4096 if feat_size is None else feat_size
             box_describer = BoxDescriber(representation_size, hidden_size, max_len,
                                          emb_size, rnn_num_layers, vocab_size, fusion_type)
+            
+        if view_predictor_head is None:
+            view_predictor_head = ViewHead(
+                hidden_size,
+                64,
+                n_views
+            )
 
         roi_heads = DenseCapRoIHeads(
             # Caption
             box_describer,
             # Box
             view_head,
+            view_predictor_head,
             box_roi_pool, box_head, box_predictor,
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,

@@ -117,6 +117,7 @@ class DenseCapRoIHeads(nn.Module):
         self,
         box_describer,
         view_head,
+        view_predictor_head,
         box_roi_pool,
         box_head,
         box_predictor,
@@ -157,6 +158,7 @@ class DenseCapRoIHeads(nn.Module):
         self.box_describer = box_describer
 
         self.view_head = view_head
+        self.view_predictor_head = view_predictor_head
 
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
@@ -541,7 +543,7 @@ class DenseCapRoIHeads(nn.Module):
         target_view,
     ):
         # ["view", "multiview", "model_contrastive", "view_contrastive"]
-        loss_caption = query_caption_loss(caption_predicts, target_embeddings)
+        loss_caption = query_caption_loss(caption_predicts, target_embeddings)        
 
         box_mean_caption_loss = loss_caption.mean(dim=1)
 
@@ -562,20 +564,36 @@ class DenseCapRoIHeads(nn.Module):
             "cap_std": box_mean_caption_loss.std(),
         }        
 
+        # GET SENTENCE EMBEDDING FOR GT CAP VIA LSTM
+        target_query = target_embeddings[0].unsqueeze(dim=0)
+        target_len = (target_query != 0).sum(dim=1).cpu()
+        word_emb = self.box_describer.embedding_layer(target_query)
+        rnn_input_pps = pack_padded_sequence(word_emb, lengths=target_len, batch_first=True, enforce_sorted=False)        
+
+        # args: batch size, device
+        h, c = self.box_describer.init_hidden(1, self.device)
+        _, (h, c) = self.box_describer.rnn(rnn_input_pps, (h, c))
+        sentence_embedding = h[0]
+        prediction = self.view_predictor_head(sentence_embedding)        
+        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
+        loss_dict["view_prediction"] = F.cross_entropy(prediction, min_view_id.unsqueeze(0))
+        # END                
+
+        view_predicts = self.view_head(box_features[min_loss_index_per_view])
+        gt_views = [
+            v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
+        ]
+        gt_views = (
+            torch.cat(gt_views, 0)
+            .to(view_predicts.device)[min_loss_index_per_view]                
+        )
+
         if not self.training:
+            _, view_predicts = view_predicts.max(dim=1)
+
             loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
             loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[min_loss_index_per_view].mean()
-            loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[min_loss_index_per_view].std()
-
-            view_predicts = self.view_head(box_features[min_loss_index_per_view])
-            gt_views = [
-                v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
-            ]
-            gt_views = (
-                torch.cat(gt_views, 0)
-                .to(view_predicts.device)[min_loss_index_per_view]                
-            )
-            _, view_predicts = view_predicts.max(dim=1)                     
+            loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[min_loss_index_per_view].std()                                 
             loss_dict["view_preds"] = view_predicts
 
             return None, loss_dict, min_loss_index, min_loss_index_per_view
@@ -588,15 +606,7 @@ class DenseCapRoIHeads(nn.Module):
                 min_loss_index_per_view
             ].mean()
 
-        if Loss.VIEW in self.losses:
-            view_predicts = self.view_head(box_features[min_loss_index_per_view])
-            gt_views = [
-                v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
-            ]
-            gt_views = (
-                torch.cat(gt_views, 0)
-                .to(view_predicts.device)[min_loss_index_per_view]                
-            )
+        if Loss.VIEW in self.losses:            
             loss_dict["view"] = predict_view_loss(view_predicts, gt_views)
 
         if Loss.MULTIVIEW in self.losses or Loss.VIEW_CONTRASTIVE in self.losses:
@@ -649,6 +659,7 @@ class DenseCapRoIHeads(nn.Module):
         target_lens = (target_query != 0).sum(dim=1)
         target_lens = target_lens.expand(batch_size)
 
+        # TODO: do not forward train for inference
         caption_predicts = self.box_describer.forward_train(
             box_features, target_embeddings, target_lens
         )

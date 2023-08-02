@@ -234,12 +234,13 @@ def train_loop(args):
         rnd_indices = torch.randperm(len(train_set))[:4000]
         rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
         train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
+        
+        iter_count = train(model, train_loader, iter_count, writer)
 
         acc_dict = test(model, test_loader, idx_to_token)
         min_acc = acc_dict["min_acc"]
         for k, v in acc_dict.items():
             writer.add_scalar(f"metric/{k}", v, iter_count)
-        iter_count = train(model, train_loader, iter_count, writer)
 
         if min_acc > best_acc:
             best_acc = min_acc
