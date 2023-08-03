@@ -553,6 +553,8 @@ class DenseCapRoIHeads(nn.Module):
         loss_caption_per_view = box_mean_caption_loss.split(boxes_per_image, 0)
 
         min_loss_index_per_view = [view.argmin() for view in loss_caption_per_view]
+        mean_loss_per_view = [view.mean() for view in loss_caption_per_view]
+        min_mean_loss_view_id = torch.tensor(mean_loss_per_view).argmin()
         min_loss_index_per_view = torch.tensor(
             [index_mapping[i][idx] for i, idx in enumerate(min_loss_index_per_view)]
         )
@@ -574,9 +576,10 @@ class DenseCapRoIHeads(nn.Module):
         h, c = self.box_describer.init_hidden(1, self.device)
         _, (h, c) = self.box_describer.rnn(rnn_input_pps, (h, c))
         sentence_embedding = h[0]
-        prediction = self.view_predictor_head(sentence_embedding)        
+        view_caption_prediction = self.view_predictor_head(sentence_embedding)        
         min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
-        loss_dict["view_prediction"] = F.cross_entropy(prediction, min_view_id.unsqueeze(0))
+        if self.training:
+            loss_dict["view_prediction"] = F.cross_entropy(view_caption_prediction, min_mean_loss_view_id.unsqueeze(0))
         # END                
 
         view_predicts = self.view_head(box_features[min_loss_index_per_view])
@@ -590,11 +593,15 @@ class DenseCapRoIHeads(nn.Module):
 
         if not self.training:
             _, view_predicts = view_predicts.max(dim=1)
+            _, view_caption_predicts = view_caption_prediction.max(dim=1)
 
             loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
             loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[min_loss_index_per_view].mean()
             loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[min_loss_index_per_view].std()                                 
             loss_dict["view_preds"] = view_predicts
+            loss_dict["view_cap_preds"] = view_caption_predicts
+            loss_dict["cap_min_view"] = min_view_id
+            loss_dict["mean_loss_view_id"] = min_mean_loss_view_id
 
             return None, loss_dict, min_loss_index, min_loss_index_per_view
         

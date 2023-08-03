@@ -70,6 +70,7 @@ def train(
                     if para.requires_grad
                     and "box_describer" not in name
                     and "view_head" not in name
+                    and "view_predictor_head" not in name
                 )
             },
             {
@@ -91,7 +92,20 @@ def train(
         ],
         lr=LR,
         weight_decay=WEIGHT_DECAY,
-    )    
+    )
+
+    view_pred_optimizer = torch.optim.Adam(
+        [
+            {
+                "params": (
+                    para
+                    for name, para in model.named_parameters()
+                    if para.requires_grad and "view_predictor_head" in name
+                )
+            }
+        ],
+        lr=VIEW_HEAD_LR        
+    )
 
     iter_count = iter_offset
 
@@ -158,6 +172,11 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
             key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
             _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
 
+            # TODO: build distribution/heat map for hits..
+            print(f"gt model:")
+            print(f"min mean view id: {losses1['mean_loss_view_id']}")
+            print(f"pred view id: {losses1['view_cap_preds']}")
+
             # print(f"gt annot: {annotation}")
             n += 1
             if losses2["cap_min"] > losses1["cap_min"]:
@@ -177,7 +196,7 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
 
             view_preds = losses1["view_preds"].cpu()
             view_pred_total += len(view_preds)
-            view_pred_correct += (view_preds == view_ids).sum()            
+            view_pred_correct += (view_preds == view_ids).sum()
 
     mean_acc = mean_pos / n
     std_acc = std_pos / n
@@ -229,12 +248,13 @@ def train_loop(args):
     iter_count = 0
     best_acc = 0
 
-    for epoch in range(10):        
+    rnd_indices = torch.randperm(len(train_set))[:4000]
+    rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
+    train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
+
+    for epoch in range(10):
         print(f"start epoch {epoch}")
-        rnd_indices = torch.randperm(len(train_set))[:4000]
-        rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
-        train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
-        
+
         iter_count = train(model, train_loader, iter_count, writer)
 
         acc_dict = test(model, test_loader, idx_to_token)
@@ -259,7 +279,7 @@ def eval_loop(args):
     token_to_idx = look_up_tables["token_to_idx"]
 
     params_path = Path("gpu_model_params")
-    model_name = "with_aux"
+    model_name = "min_cap"
     model = load_model(
         params_path / "config.json",
         params_path / (model_name + ".pth.tar"),
@@ -272,9 +292,9 @@ def eval_loop(args):
     model.toDevice(device)
     test_set = SnareDataset(mode="valid")
 
-    test_loader = DataLoader(test_set, batch_size=1)        
+    test_loader = DataLoader(test_set, batch_size=1)
 
-    acc_dict = test(model, test_loader, idx_to_token)    
+    acc_dict = test(model, test_loader, idx_to_token)
 
 
 def main():
