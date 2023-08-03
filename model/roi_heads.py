@@ -554,7 +554,7 @@ class DenseCapRoIHeads(nn.Module):
 
         min_loss_index_per_view = [view.argmin() for view in loss_caption_per_view]
         mean_loss_per_view = [view.mean() for view in loss_caption_per_view]
-        min_mean_loss_view_id = torch.tensor(mean_loss_per_view).argmin()
+        min_mean_loss_view_id = torch.tensor(mean_loss_per_view, device=box_mean_caption_loss.device).argmin()
         min_loss_index_per_view = torch.tensor(
             [index_mapping[i][idx] for i, idx in enumerate(min_loss_index_per_view)]
         )
