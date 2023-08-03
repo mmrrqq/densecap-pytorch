@@ -172,10 +172,10 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
             key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
             _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
 
-            # TODO: build distribution/heat map for hits..
-            print(f"gt model:")
-            print(f"min mean view id: {losses1['mean_loss_view_id']}")
-            print(f"pred view id: {losses1['view_cap_preds']}")
+            # # TODO: build distribution/heat map for hits..
+            # print(f"gt model:")
+            # print(f"min mean view id: {losses1['mean_loss_view_id']}")
+            # print(f"pred view id: {losses1['view_cap_preds']}")
 
             # print(f"gt annot: {annotation}")
             n += 1
