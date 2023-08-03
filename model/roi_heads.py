@@ -579,7 +579,15 @@ class DenseCapRoIHeads(nn.Module):
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
         min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
         if self.training:
-            loss_dict["view_prediction"] = F.cross_entropy(view_caption_prediction, min_mean_loss_view_id.unsqueeze(0))
+            # TODO: use KL divergence instead!
+            log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
+            # TODO: alternatively, create distribution once and roll array.
+            min_view_distribution = torch.zeros((8,), device=min_mean_loss_view_id.device)
+            min_view_distribution[min_mean_loss_view_id] = 1
+            min_view_distribution[min_mean_loss_view_id - 1] = 0.25
+            min_view_distribution[min_mean_loss_view_id + 1 % 8] = 0.25
+            min_view_distribution /= min_view_distribution.sum()
+            loss_dict["view_prediction"] = F.kl_div(log_view_caption_prediction, min_view_distribution)
         # END                
 
         view_predicts = self.view_head(box_features[min_loss_index_per_view])
