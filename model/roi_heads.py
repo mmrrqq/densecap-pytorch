@@ -585,12 +585,12 @@ class DenseCapRoIHeads(nn.Module):
             min_view_distribution = torch.zeros((8,), device=min_mean_loss_view_id.device)
             min_view_distribution[min_mean_loss_view_id] = 1
             min_view_distribution[min_mean_loss_view_id - 1] = 0.25
-            min_view_distribution[min_mean_loss_view_id + 1 % 8] = 0.25
+            min_view_distribution[(min_mean_loss_view_id + 1) % 8] = 0.25
             min_view_distribution /= min_view_distribution.sum()
             loss_dict["view_prediction"] = F.kl_div(log_view_caption_prediction, min_view_distribution)
         # END                
 
-        view_predicts = self.view_head(box_features[min_loss_index_per_view])
+        view_predicts = self.view_head([min_loss_index_per_view])
         gt_views = [
             v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
         ]
