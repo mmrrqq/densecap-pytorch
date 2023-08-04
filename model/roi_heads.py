@@ -590,7 +590,7 @@ class DenseCapRoIHeads(nn.Module):
             loss_dict["view_prediction"] = F.kl_div(log_view_caption_prediction, min_view_distribution)
         # END                
 
-        view_predicts = self.view_head([min_loss_index_per_view])
+        view_predicts = self.view_head(box_features[min_loss_index_per_view])
         gt_views = [
             v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
         ]
