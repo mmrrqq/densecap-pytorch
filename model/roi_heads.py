@@ -654,11 +654,19 @@ class DenseCapRoIHeads(nn.Module):
         if Loss.MODEL_CONTRASTIVE_CAP in self.losses:
             raise NotImplementedError
 
-        total_loss = reduce(
-            lambda acc, x: acc + x,
-            loss_dict.values(),
-            torch.zeros((), device=self.device),
-        )
+        # total_loss = reduce(
+        #     lambda acc, x: acc + x,
+        #     loss_dict.values(),
+        #     torch.zeros((), device=self.device),
+        # )
+
+        # temporary exclude cap view_prediction from total loss..
+        total_loss = torch.zeros((), device=self.device)
+        for key, value in loss_dict.items():
+            if key == "view_prediction":
+                continue
+            
+            total_loss += value
 
         return total_loss, loss_dict, min_loss_index, min_loss_index_per_view
 
