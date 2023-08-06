@@ -109,7 +109,9 @@ def train(
 
     iter_count = iter_offset
 
-    for batch in tqdm(data_loader):
+    cap_view_pred_mode = False
+
+    for i, batch in enumerate(tqdm(data_loader)):
         imgs, gt_idxs, keys, annotation, is_visual = batch
 
         if is_visual.sum() < data_loader.batch_size or (gt_idxs < 0).sum() > 0:
@@ -123,16 +125,22 @@ def train(
         if writer is not None:
             writer.add_scalar("batch_loss/total", loss.item(), iter_count)
             for k, v in loss_dict.items():
-                writer.add_scalar(f"batch_loss/{k}", v.item(), iter_count)
+                writer.add_scalar(f"batch_loss/{k}", v.item(), iter_count)        
 
-        loss = loss / ACCUMULATE_BATCH_SIZE
-        loss.backward()
+        if cap_view_pred_mode:
+            loss = loss_dict['view_prediction'] / ACCUMULATE_BATCH_SIZE            
+        else:
+            loss = loss / ACCUMULATE_BATCH_SIZE            
 
+        loss.backward()            
         if ((iter_count + 1) % ACCUMULATE_BATCH_SIZE == 0) or (
             iter_count + 1 == len(data_loader)
         ):
-            optimizer.step()
-            optimizer.zero_grad()
+            (view_pred_optimizer if cap_view_pred_mode else optimizer).step()
+            (view_pred_optimizer if cap_view_pred_mode else optimizer).zero_grad()
+
+            if not cap_view_pred_mode and i > len(data_loader):
+                cap_view_pred_mode = True
 
         iter_count += 1
 
@@ -248,7 +256,7 @@ def train_loop(args):
     iter_count = 0
     best_acc = 0
 
-    rnd_indices = torch.randperm(len(train_set))[:4000]
+    rnd_indices = torch.randperm(len(train_set))[:2000]
     rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
     train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
 

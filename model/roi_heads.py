@@ -578,8 +578,7 @@ class DenseCapRoIHeads(nn.Module):
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
         min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
-        if self.training:
-            # TODO: use KL divergence instead!
+        if self.training:            
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
             # TODO: alternatively, create distribution once and roll array.
             min_view_distribution = torch.zeros((8,), device=min_mean_loss_view_id.device)
