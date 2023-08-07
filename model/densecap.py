@@ -102,7 +102,7 @@ class DenseCapModel(GeneralizedRCNN):
             
         if view_head is None:
             representation_size = 4096 if feat_size is None else feat_size
-            view_head = ViewHead(
+            view_head = ViewPredHead(
                 representation_size,
                 64,
                 n_views)
@@ -119,7 +119,7 @@ class DenseCapModel(GeneralizedRCNN):
                                          emb_size, rnn_num_layers, vocab_size, fusion_type)
             
         if view_predictor_head is None:
-            view_predictor_head = ViewHead(
+            view_predictor_head = ViewPredHead(
                 hidden_size,
                 64,
                 n_views
@@ -179,6 +179,32 @@ class DenseCapModel(GeneralizedRCNN):
 
         return losses
 
+
+class ViewPredHead(nn.Module):
+    """
+    Standard heads for FPN-based models
+
+    Arguments:
+        in_channels (int): number of input channels
+        hidden_size (int): hidden layer size
+        n_classes (int): numer of output classes
+    """
+
+    def __init__(self, in_channels, hidden_size, n_classes):
+        super(ViewPredHead, self).__init__()
+
+        self.fc1 = nn.Linear(in_channels, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, n_classes)        
+
+    def forward(self, x):
+        x = x.flatten(start_dim=1)
+
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+
+        return x
 
 
 class ViewHead(nn.Module):

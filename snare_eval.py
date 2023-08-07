@@ -140,6 +140,7 @@ def train(
             (view_pred_optimizer if cap_view_pred_mode else optimizer).zero_grad()
 
             if not cap_view_pred_mode and i > len(data_loader):
+                print("switch to cap view pred")
                 cap_view_pred_mode = True
 
         iter_count += 1
