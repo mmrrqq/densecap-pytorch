@@ -257,7 +257,7 @@ def train_loop(args):
     iter_count = 0
     best_acc = 0
 
-    rnd_indices = torch.randperm(len(train_set))[:2000]
+    rnd_indices = torch.randperm(len(train_set))[:1000]
     rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
     train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
 
