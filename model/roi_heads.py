@@ -573,22 +573,23 @@ class DenseCapRoIHeads(nn.Module):
         h, c = self.box_describer.init_hidden(1, self.device)
         
         with torch.no_grad():
-            for i in range(target_len):
-                word_emb = word_embeddings[:, i].unsqueeze(dim=0)
-                _, (h, c) = self.box_describer.rnn(word_emb, (h, c))
-
+            # for i in range(target_len):
+            #     word_emb = word_embeddings[:, i].unsqueeze(dim=0)
+            x, (h, c) = self.box_describer.rnn(word_embeddings)
+            
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
-        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
+        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()        
+
         if self.training:            
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
             # TODO: alternatively, create distribution once and roll array.
             min_view_distribution = torch.zeros((8,), device=min_mean_loss_view_id.device)
-            min_view_distribution[min_mean_loss_view_id] = 1
-            min_view_distribution[min_mean_loss_view_id - 1] = 0.25
-            min_view_distribution[(min_mean_loss_view_id + 1) % 8] = 0.25
+            min_view_distribution[min_view_id] = 1
+            min_view_distribution[min_view_id - 1] = 0.125
+            min_view_distribution[(min_view_id + 1) % 8] = 0.125
             min_view_distribution /= min_view_distribution.sum()
-            loss_dict["view_prediction"] = F.kl_div(log_view_caption_prediction, min_view_distribution)
+            loss_dict["view_prediction"] = F.kl_div(log_view_caption_prediction, min_view_distribution, reduction='batchmean')
         # END                
 
         view_predicts = self.view_head(box_features[min_loss_index_per_view])
@@ -623,7 +624,17 @@ class DenseCapRoIHeads(nn.Module):
             ].mean()
 
         if Loss.VIEW in self.losses:            
-            loss_dict["view"] = predict_view_loss(view_predicts, gt_views)
+            log_view_prediction = F.log_softmax(view_predicts, dim=1)
+
+            min_view_distribution = torch.zeros((8,8,), device=gt_views.device)
+            for i, view in enumerate(gt_views):
+                min_view_distribution[i, min_view_id] = 1
+                min_view_distribution[i, min_view_id - 1] = 0.125
+                min_view_distribution[i, (min_view_id + 1) % 8] = 0.125
+                min_view_distribution[i] /= min_view_distribution[i].sum()
+
+            loss_dict["view"] = F.kl_div(log_view_prediction, min_view_distribution, reduction='batchmean')            
+            # loss_dict["view"] = predict_view_loss(view_predicts, gt_views)
 
         if Loss.MULTIVIEW in self.losses or Loss.VIEW_CONTRASTIVE in self.losses:
             view_features = box_features[min_loss_index_per_view]
