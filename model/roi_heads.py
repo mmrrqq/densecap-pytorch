@@ -621,16 +621,16 @@ class DenseCapRoIHeads(nn.Module):
         if Loss.MULTIVIEW_CAP in self.losses:
             loss_dict["multiview_cap"] = box_mean_caption_loss[
                 min_loss_index_per_view
-            ].mean()
+            ].sum()
 
         if Loss.VIEW in self.losses:            
             log_view_prediction = F.log_softmax(view_predicts, dim=1)
 
             min_view_distribution = torch.zeros((8,8,), device=gt_views.device)
             for i, view in enumerate(gt_views):
-                min_view_distribution[i, min_view_id] = 1
-                min_view_distribution[i, min_view_id - 1] = 0.125
-                min_view_distribution[i, (min_view_id + 1) % 8] = 0.125
+                min_view_distribution[i, view] = 1
+                min_view_distribution[i, view - 1] = 0.125
+                min_view_distribution[i, (view + 1) % 8] = 0.125
                 min_view_distribution[i] /= min_view_distribution[i].sum()
 
             loss_dict["view"] = F.kl_div(log_view_prediction, min_view_distribution, reduction='batchmean')            
