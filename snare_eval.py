@@ -139,7 +139,7 @@ def train(
             (view_pred_optimizer if cap_view_pred_mode else optimizer).step()
             (view_pred_optimizer if cap_view_pred_mode else optimizer).zero_grad()
 
-            if not cap_view_pred_mode and i > len(data_loader):
+            if not cap_view_pred_mode and i > (len(data_loader) / 2):
                 print("switch to cap view pred")
                 cap_view_pred_mode = True
 
@@ -257,7 +257,7 @@ def train_loop(args):
     iter_count = 0
     best_acc = 0
 
-    rnd_indices = torch.randperm(len(train_set))[:2000]
+    rnd_indices = torch.randperm(len(train_set))[:100]
     rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
     train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
 
