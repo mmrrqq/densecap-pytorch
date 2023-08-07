@@ -569,12 +569,14 @@ class DenseCapRoIHeads(nn.Module):
         # GET SENTENCE EMBEDDING FOR GT CAP VIA LSTM
         target_query = target_embeddings[0].unsqueeze(dim=0)
         target_len = (target_query != 0).sum(dim=1).cpu()
-        word_emb = self.box_describer.embedding_layer(target_query)
-        rnn_input_pps = pack_padded_sequence(word_emb, lengths=target_len, batch_first=True, enforce_sorted=False)        
-
-        # args: batch size, device
+        word_embeddings = self.box_describer.embedding_layer(target_query)               
         h, c = self.box_describer.init_hidden(1, self.device)
-        _, (h, c) = self.box_describer.rnn(rnn_input_pps, (h, c))
+        
+        with torch.no_grad():
+            for i in range(target_len):
+                word_emb = word_embeddings[:, i].unsqueeze(dim=0)
+                _, (h, c) = self.box_describer.rnn(word_emb, (h, c))
+
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
         min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
