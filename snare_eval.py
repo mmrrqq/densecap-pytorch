@@ -13,9 +13,9 @@ from utils.snare_dataset import SnareDataset
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 # device = torch.device("cpu")
-VIEW_HEAD_LR = 1e-3
+VIEW_HEAD_LR = 1e-5
 CAP_LR = 1e-5
-LR = 1e-5
+LR = 1e-6
 WEIGHT_DECAY = 0
 ACCUMULATE_BATCH_SIZE = 32
 
