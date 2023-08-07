@@ -248,9 +248,9 @@ def train_loop(args):
     model.token_to_idx = token_to_idx
 
     model.toDevice(device)
-    test_set = SnareDataset(mode="valid")
+    test_set = SnareDataset(mode="valid", filter_visual=True)
 
-    train_set = SnareDataset(mode="train")
+    train_set = SnareDataset(mode="train", filter_visual=True)
     test_loader = DataLoader(test_set, batch_size=1)
 
     writer = SummaryWriter()
@@ -299,7 +299,7 @@ def eval_loop(args):
     model.token_to_idx = token_to_idx
 
     model.toDevice(device)
-    test_set = SnareDataset(mode="valid")
+    test_set = SnareDataset(mode="valid", filter_visual=True)
 
     test_loader = DataLoader(test_set, batch_size=1)
 

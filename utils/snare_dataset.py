@@ -18,11 +18,12 @@ annotations_path = Path("../snare/amt/folds_adversarial")
 
 class SnareDataset(torch.utils.data.Dataset):
 
-    def __init__(self, mode='train', transform=None):
+    def __init__(self, mode='train', transform=None, filter_visual=False):
         self.total_views = 14        
         self.mode = mode        
         self.transform = transform
         self.view_id_regex = re.compile(r"\w*-([0-9]+)\.png")
+        self.filter_visual = filter_visual
 
         self.load_entries()
 
@@ -48,6 +49,9 @@ class SnareDataset(torch.utils.data.Dataset):
             fname_rel = annotations_path / file            
             with open(fname_rel, 'r') as f:
                 self.data = self.data + json.load(f)
+
+        if self.filter_visual and (self.mode == "train" or self.mode == "valid"):
+            self.data = [d for d in self.data if d['visual']]
 
         print(f"Loaded Entries. {self.mode}: {len(self.data)} entries")            
 
