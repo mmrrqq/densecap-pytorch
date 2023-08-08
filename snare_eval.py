@@ -246,12 +246,29 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
     }
 
 
+def view_predict(model: DenseCapModel, images, query):
+    """Select a random image, predict view and the best view according to the query and 
+    calculate and return query probability on the predicted best view.
+    """
+    images = [k.squeeze().to(device) for k in images]    
+    rnd_view_id: int = torch.randint(low=0, high=len(key1_imgs), size=(1,)).item()
+    rnd_img = images[rnd_view_id]
+    # print(f"original view: {rnd_view_id}")
+    view_pred, cap_view_pred = model.query_view_caption(rnd_img, query)
+
+    pred_best_img = images[cap_view_pred.cpu().item()]
+    _, best_view_losses, _ = model.query_caption([pred_best_img], [query], [pred_best_img])
+    _, random_view_losses, _ = model.query_caption([rnd_img], [query], [rnd_view_id])
+
+    return best_view_losses, random_view_losses
+
+
 def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
-    model.eval()
-    view_ids = torch.arange(8)
+    model.eval()    
 
     n = 0
-    min_pos = 0    
+    pred_pos = 0    
+    random_pos = 0
     torch.random.seed()
 
     with torch.no_grad():
@@ -267,63 +284,26 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, idx_to_t
                 key1_imgs, key2_imgs = key2_imgs, key1_imgs
 
             key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
-            # TODO: randomly sample one image..
-            rnd_view_id: int = torch.randint(low=0, high=len(key1_imgs), size=(1,)).item()
-            key1_img = key1_imgs[rnd_view_id]
-            # print(f"original view: {rnd_view_id}")
-            view_pred, cap_view_pred = model.query_view_caption(key1_img, annotation)
-            # print(f"predicted view acc: {(view_pred == rnd_view_id).sum()/len(view_pred)}")
-            # print(f"predicted caption view: {cap_view_pred}")
-            if cap_view_pred.item() > 0:
-                print(cap_view_pred.item())
+            best_view_losses1, random_losses1 = view_predict(model, key1_imgs, annotation)
 
-            # del key1_imgs
+            del key1_imgs
 
-            # key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
-            # _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
+            key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
+            best_view_losses2, random_losses2 = view_predict(model, key2_imgs, annotation)
             
-            # print(f"gt model:")
-            # print(f"min mean view id: {losses1['cap_min_view']}")
-            # print(f"pred view id: {losses1['view_cap_preds']}")
+            n += 1
+            if best_view_losses2["cap_min"] > best_view_losses1["cap_min"]:
+                pred_pos += 1
 
-            # # print(f"gt annot: {annotation}")
-            # n += 1
-            # if losses2["cap_min"] > losses1["cap_min"]:
-            #     min_pos += 1
+            if random_losses2["cap_min"] > random_losses1["cap_min"]:
+                random_pos += 1
+    
+    pred_acc = pred_pos / n
+    random_acc = random_pos / n    
 
-            # if losses2["cap_mean"] > losses1["cap_mean"]:
-            #     mean_pos += 1
-
-            # if losses2["cap_std"] > losses1["cap_std"]:
-            #     std_pos += 1
-
-            # if losses2["cap_min_per_view_mean"] > losses1["cap_min_per_view_mean"]:
-            #     min_per_view_mean_pos += 1
-
-            # if losses2["cap_min_per_view_std"] > losses1["cap_min_per_view_std"]:
-            #     min_per_view_std_pos += 1
-
-            # view_preds = losses1["view_preds"].cpu()
-            # view_pred_total += len(view_preds)
-            # view_pred_correct += (view_preds == view_ids).sum()
-
-    # mean_acc = mean_pos / n
-    # std_acc = std_pos / n
-    # min_acc = min_pos / n
-    # min_per_view_mean_acc = min_per_view_mean_pos / n
-    # min_per_view_std_acc = min_per_view_std_pos / n
-    # view_pred_acc = view_pred_correct / view_pred_total
-
-    # print(
-    #     f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nstd:\t{std_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nmin per view std:\t{min_per_view_std_acc}\nview pred:\t{view_pred_acc}"
-    # )
-    # return {
-    #     "min_acc": min_acc,
-    #     "mean_acc": mean_acc,
-    #     "std_acc": std_acc,
-    #     "min_per_view_mean_acc": min_per_view_mean_acc,
-    #     "min_per_view_std_acc": min_per_view_std_acc,
-    # }
+    print(
+        f"view prediction test end.\npred:\t{pred_acc:.2f}\nrandom:\t{random_acc:.2f}"
+    )    
 
 
 def train_loop(args):
