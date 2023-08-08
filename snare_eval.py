@@ -24,7 +24,9 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--params_path", default="compute_model_params")
+    parser.add_argument("--test-view", action="store_true", default=False)
     parser.add_argument("--train", action="store_true", default=False)
+    parser.add_argument("--alternating", action="store_true", default=False)
     parser.add_argument(
         "--losses",
         nargs="+",
@@ -48,6 +50,7 @@ def train(
     data_loader: DataLoader,
     iter_offset: int = 0,
     writer: Optional[SummaryWriter] = None,
+    args = {}
 ):
     model.train()
 
@@ -89,6 +92,14 @@ def train(
                 ),
                 "lr": VIEW_HEAD_LR,
             },
+            {
+                "params": (
+                    para
+                    for para in model.roi_heads.view_predictor_head.parameters()
+                    if para.requires_grad
+                ) if not args.alternating else (),
+                "lr": VIEW_HEAD_LR
+            }
         ],
         lr=LR,
         weight_decay=WEIGHT_DECAY,
@@ -105,7 +116,7 @@ def train(
             }
         ],
         lr=VIEW_HEAD_LR        
-    )
+    ) if args.alternating else None
 
     iter_count = iter_offset
 
@@ -136,12 +147,17 @@ def train(
         if ((iter_count + 1) % ACCUMULATE_BATCH_SIZE == 0) or (
             iter_count + 1 == len(data_loader)
         ):
-            (view_pred_optimizer if cap_view_pred_mode else optimizer).step()
-            (view_pred_optimizer if cap_view_pred_mode else optimizer).zero_grad()
+            if args.alternating:
+                (view_pred_optimizer if cap_view_pred_mode else optimizer).step()
+                (view_pred_optimizer if cap_view_pred_mode else optimizer).zero_grad()
 
-            if not cap_view_pred_mode and i > (len(data_loader) / 2):
-                print("switch to cap view pred")
-                cap_view_pred_mode = True
+                if not cap_view_pred_mode and i > (len(data_loader) / 2):
+                    print("switch to cap view pred")
+                    cap_view_pred_mode = True
+
+            else:
+                optimizer.step()
+                optimizer.zero_grad()
 
         iter_count += 1
 
@@ -226,6 +242,86 @@ def test(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
     }
 
 
+def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, idx_to_token):
+    model.eval()
+    view_ids = torch.arange(8)
+
+    n = 0
+    min_pos = 0    
+    torch.random.seed()
+
+    with torch.no_grad():
+        for batch in tqdm(data_loader):
+            (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch
+
+            if not is_visual or gt_idx < 0:
+                continue
+
+            annotation = annotation[0]
+
+            if gt_idx > 0:
+                key1_imgs, key2_imgs = key2_imgs, key1_imgs
+
+            key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
+            # TODO: randomly sample one image..
+            rnd_view_id: int = torch.randint(low=0, high=len(key1_imgs), size=(1,)).item()
+            key1_img = key1_imgs[rnd_view_id]
+            # print(f"original view: {rnd_view_id}")
+            view_pred, cap_view_pred = model.query_view_caption(key1_img, annotation)
+            # print(f"predicted view acc: {(view_pred == rnd_view_id).sum()/len(view_pred)}")
+            # print(f"predicted caption view: {cap_view_pred}")
+            if cap_view_pred.item() > 0:
+                print(cap_view_pred.item())
+
+            # del key1_imgs
+
+            # key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
+            # _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
+            
+            # print(f"gt model:")
+            # print(f"min mean view id: {losses1['cap_min_view']}")
+            # print(f"pred view id: {losses1['view_cap_preds']}")
+
+            # # print(f"gt annot: {annotation}")
+            # n += 1
+            # if losses2["cap_min"] > losses1["cap_min"]:
+            #     min_pos += 1
+
+            # if losses2["cap_mean"] > losses1["cap_mean"]:
+            #     mean_pos += 1
+
+            # if losses2["cap_std"] > losses1["cap_std"]:
+            #     std_pos += 1
+
+            # if losses2["cap_min_per_view_mean"] > losses1["cap_min_per_view_mean"]:
+            #     min_per_view_mean_pos += 1
+
+            # if losses2["cap_min_per_view_std"] > losses1["cap_min_per_view_std"]:
+            #     min_per_view_std_pos += 1
+
+            # view_preds = losses1["view_preds"].cpu()
+            # view_pred_total += len(view_preds)
+            # view_pred_correct += (view_preds == view_ids).sum()
+
+    # mean_acc = mean_pos / n
+    # std_acc = std_pos / n
+    # min_acc = min_pos / n
+    # min_per_view_mean_acc = min_per_view_mean_pos / n
+    # min_per_view_std_acc = min_per_view_std_pos / n
+    # view_pred_acc = view_pred_correct / view_pred_total
+
+    # print(
+    #     f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nstd:\t{std_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nmin per view std:\t{min_per_view_std_acc}\nview pred:\t{view_pred_acc}"
+    # )
+    # return {
+    #     "min_acc": min_acc,
+    #     "mean_acc": mean_acc,
+    #     "std_acc": std_acc,
+    #     "min_per_view_mean_acc": min_per_view_mean_acc,
+    #     "min_per_view_std_acc": min_per_view_std_acc,
+    # }
+
+
 def train_loop(args):
     print(args.losses)
     lut_path = Path("./data/VG-regions-dicts-lite.pkl")
@@ -264,7 +360,7 @@ def train_loop(args):
     for epoch in range(10):
         print(f"start epoch {epoch}")
 
-        iter_count = train(model, train_loader, iter_count, writer)
+        iter_count = train(model, train_loader, iter_count, writer, args)
 
         acc_dict = test(model, test_loader, idx_to_token)
         min_acc = acc_dict["min_acc"]
@@ -287,8 +383,8 @@ def eval_loop(args):
     idx_to_token = look_up_tables["idx_to_token"]
     token_to_idx = look_up_tables["token_to_idx"]
 
-    params_path = Path("gpu_model_params")
-    model_name = "min_cap"
+    params_path = Path("model_params")
+    model_name = "min_cap_multiview_view_end"
     model = load_model(
         params_path / "config.json",
         params_path / (model_name + ".pth.tar"),
@@ -303,7 +399,10 @@ def eval_loop(args):
 
     test_loader = DataLoader(test_set, batch_size=1)
 
-    acc_dict = test(model, test_loader, idx_to_token)
+    if args.test_view:
+        test_view_prediction(model, test_loader, idx_to_token)
+    else:
+        acc_dict = test(model, test_loader, idx_to_token)
 
 
 def main():

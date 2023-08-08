@@ -167,6 +167,17 @@ class DenseCapModel(GeneralizedRCNN):
             tokenized_captions.append(torch.tensor(tokenized, dtype=torch.long, device=self.device))
 
         return torch.stack(tokenized_captions)
+    
+
+    def query_view_caption(self, target_image: torch.Tensor, caption: str):
+        images, _ = self.transform([target_image], None)
+        tokenized_captions = self.tokenize([caption])
+
+        features = self.backbone(images.tensors)
+        proposals, _ = self.rpn(images, features, None)
+
+        # returns predicted views, predicted best caption view
+        return self.roi_heads.view_predict(features, proposals, images.image_sizes, tokenized_captions)
 
 
     def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: List[int]):        

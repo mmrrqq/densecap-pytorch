@@ -567,19 +567,17 @@ class DenseCapRoIHeads(nn.Module):
         }        
 
         # GET SENTENCE EMBEDDING FOR GT CAP VIA LSTM
-        target_query = target_embeddings[0].unsqueeze(dim=0)
-        target_len = (target_query != 0).sum(dim=1).cpu()
+        target_query = target_embeddings[0].unsqueeze(dim=0)        
         word_embeddings = self.box_describer.embedding_layer(target_query)               
         h, c = self.box_describer.init_hidden(1, self.device)
         
-        with torch.no_grad():
-            # for i in range(target_len):
-            #     word_emb = word_embeddings[:, i].unsqueeze(dim=0)
+        with torch.no_grad():            
             x, (h, c) = self.box_describer.rnn(word_embeddings)
             
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
         min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()        
+        print(min_view_id)
 
         if self.training:            
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
@@ -682,6 +680,36 @@ class DenseCapRoIHeads(nn.Module):
             total_loss += value
 
         return total_loss, loss_dict, min_loss_index, min_loss_index_per_view
+    
+    def view_predict(
+            self, features, proposals, image_shapes, target_query
+    ):
+        box_features = self.box_roi_pool(features, proposals, image_shapes)
+        box_features = self.box_head(box_features)        
+
+        batch_size, _ = box_features.shape
+        target_embeddings = target_query.expand(batch_size, -1)
+        target_lens = (target_query != 0).sum(dim=1)
+        target_lens = target_lens.expand(batch_size)
+
+        target_query = target_embeddings[0].unsqueeze(dim=0)        
+        word_embeddings = self.box_describer.embedding_layer(target_query)               
+        h, c = self.box_describer.init_hidden(1, self.device)
+        
+        with torch.no_grad():            
+            x, (h, c) = self.box_describer.rnn(word_embeddings)
+            
+        sentence_embedding = h[0]
+        view_caption_prediction = self.view_predictor_head(sentence_embedding)        
+
+        view_predicts = self.view_head(box_features)
+        print(view_predicts.shape)
+        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)        
+        print(view_caption_prediction.shape)
+        _, view_caption_predicts = F.softmax(view_caption_prediction, dim=1).max(dim=1)
+
+        return view_predicts, view_caption_predicts
+        
 
     def forward_query(
         self, features, proposals, image_shapes, target_query, target_view
