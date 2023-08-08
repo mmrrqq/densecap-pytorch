@@ -576,8 +576,7 @@ class DenseCapRoIHeads(nn.Module):
             
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
-        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()        
-        print(min_view_id)
+        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()                
 
         if self.training:            
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)

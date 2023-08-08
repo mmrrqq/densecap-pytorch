@@ -64,7 +64,7 @@ def train(
 
     view_ids = torch.arange(8)
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         [
             {
                 "params": (
@@ -74,7 +74,8 @@ def train(
                     and "box_describer" not in name
                     and "view_head" not in name
                     and "view_predictor_head" not in name
-                )
+                ),
+                "name": "base",
             },
             {
                 "params": (
@@ -83,6 +84,7 @@ def train(
                     if para.requires_grad
                 ),
                 "lr": CAP_LR,
+                "name": "captioning",
             },
             {
                 "params": (
@@ -91,6 +93,7 @@ def train(
                     if para.requires_grad
                 ),
                 "lr": VIEW_HEAD_LR,
+                "name": "view_head",
             },
             {
                 "params": (
@@ -98,14 +101,15 @@ def train(
                     for para in model.roi_heads.view_predictor_head.parameters()
                     if para.requires_grad
                 ) if not args.alternating else (),
-                "lr": VIEW_HEAD_LR
+                "lr": VIEW_HEAD_LR,
+                "name": "view_prediction_head",
             }
         ],
         lr=LR,
         weight_decay=WEIGHT_DECAY,
     )
 
-    view_pred_optimizer = torch.optim.Adam(
+    view_pred_optimizer = torch.optim.AdamW(
         [
             {
                 "params": (
