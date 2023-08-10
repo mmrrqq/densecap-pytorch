@@ -389,7 +389,7 @@ def eval_loop(args):
     token_to_idx = look_up_tables["token_to_idx"]
 
     params_path = Path("model_params")
-    model_name = "view_end"
+    model_name = "freeze_all_view_end"
     model = load_model(
         params_path / "config.json",
         params_path / (model_name + ".pth.tar"),

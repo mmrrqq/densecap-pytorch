@@ -673,7 +673,7 @@ class DenseCapRoIHeads(nn.Module):
         # temporary exclude cap view_prediction from total loss..
         total_loss = torch.zeros((), device=self.device)
         for key, value in loss_dict.items():
-            if key == "view_prediction" or key == "cap_mean" or key == "cap_std":
+            if key == "cap_mean" or key == "cap_std":
                 continue
             
             total_loss += value
