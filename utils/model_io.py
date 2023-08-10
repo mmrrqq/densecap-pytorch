@@ -67,7 +67,7 @@ def save_model(
 
     filename = os.path.join(
         "model_params",
-        f"{f'{prefix}_' if isinstance(prefix, str) else ''}{model.name}{f'_{flag}' if isinstance(flag, str) else ''}",
+        f"{f'{prefix}_' if isinstance(prefix, str) else ''}{model.name}{f'_{flag}' if isinstance(flag, str) else ''}.pth.tar",
     )
 
     print(f"Saving checkpoint to {filename}")
