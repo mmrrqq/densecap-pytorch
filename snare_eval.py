@@ -65,12 +65,12 @@ def train(
         param.requires_grad = False
 
     # TEMP: freeze all layers except view predictors..
-    for name, param in model.named_parameters():
-        if "box_describer" not in name and "view_head" not in name and "view_predictor_head" not in name:
-            param.requires_grad = False
+    # for name, param in model.named_parameters():
+    #     if "box_describer" not in name and "view_head" not in name and "view_predictor_head" not in name:
+    #         param.requires_grad = False
 
-    for param in model.roi_heads.box_describer.parameters():
-        param.requires_grad = False
+    # for param in model.roi_heads.box_describer.parameters():
+    #     param.requires_grad = False
     # END TEMP: freeze all layers except view predictors..
 
     view_ids = torch.arange(8)    
