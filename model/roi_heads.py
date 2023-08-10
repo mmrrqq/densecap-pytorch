@@ -701,10 +701,8 @@ class DenseCapRoIHeads(nn.Module):
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)        
 
-        view_predicts = self.view_head(box_features)
-        print(view_predicts.shape)
-        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)        
-        print(view_caption_prediction.shape)
+        view_predicts = self.view_head(box_features)        
+        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)
         _, view_caption_predicts = F.softmax(view_caption_prediction, dim=1).max(dim=1)
 
         return view_predicts, view_caption_predicts

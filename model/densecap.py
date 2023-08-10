@@ -180,7 +180,7 @@ class DenseCapModel(GeneralizedRCNN):
         return self.roi_heads.view_predict(features, proposals, images.image_sizes, tokenized_captions)
 
 
-    def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: List[int]):        
+    def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: torch.Tensor):        
         images, _ = self.transform(target_images, None)
         tokenized_captions = self.tokenize(captions)
 

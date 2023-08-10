@@ -62,7 +62,16 @@ def train(
     for param in model.roi_heads.box_predictor.parameters():
         param.requires_grad = False
 
-    view_ids = torch.arange(8)
+    # TEMP: freeze all layers except view predictors..
+    for name, param in model.named_parameters():
+        if "box_describer" not in name and "view_head" not in name and "view_predictor_head" not in name:
+            param.requires_grad = False
+
+    for param in model.roi_heads.box_describer.parameters():
+        param.requires_grad = False
+    # END TEMP: freeze all layers except view predictors..
+
+    view_ids = torch.arange(8)    
 
     optimizer = torch.optim.AdamW(
         [
@@ -107,7 +116,7 @@ def train(
         ],
         lr=LR,
         weight_decay=WEIGHT_DECAY,
-    )
+    )    
 
     view_pred_optimizer = torch.optim.AdamW(
         [
@@ -251,14 +260,16 @@ def view_predict(model: DenseCapModel, images, query):
     calculate and return query probability on the predicted best view.
     """
     images = [k.squeeze().to(device) for k in images]    
-    rnd_view_id: int = torch.randint(low=0, high=len(key1_imgs), size=(1,)).item()
+    rnd_view_id: int = torch.randint(low=0, high=len(images), size=(1,)).item()
     rnd_img = images[rnd_view_id]
     # print(f"original view: {rnd_view_id}")
     view_pred, cap_view_pred = model.query_view_caption(rnd_img, query)
 
+    # print(f"view: {rnd_view_id}, pred: {view_pred}, {cap_view_pred.item()}")
+
     pred_best_img = images[cap_view_pred.cpu().item()]
-    _, best_view_losses, _ = model.query_caption([pred_best_img], [query], [pred_best_img])
-    _, random_view_losses, _ = model.query_caption([rnd_img], [query], [rnd_view_id])
+    _, best_view_losses, _ = model.query_caption([pred_best_img], [query], cap_view_pred.cpu().unsqueeze(0))
+    _, random_view_losses, _ = model.query_caption([rnd_img], [query], torch.tensor([rnd_view_id]))
 
     return best_view_losses, random_view_losses
 
@@ -272,7 +283,7 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, idx_to_t
     torch.random.seed()
 
     with torch.no_grad():
-        for batch in tqdm(data_loader):
+        for i, batch in enumerate(tqdm(data_loader)):
             (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch
 
             if not is_visual or gt_idx < 0:
@@ -297,6 +308,14 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, idx_to_t
 
             if random_losses2["cap_min"] > random_losses1["cap_min"]:
                 random_pos += 1
+
+            if i % 100 == 0:
+                pred_acc = pred_pos / n
+                random_acc = random_pos / n    
+
+                print(
+                    f"intermedia results\npred:\t{pred_acc:.2f}\nrandom:\t{random_acc:.2f}"
+                )
     
     pred_acc = pred_pos / n
     random_acc = random_pos / n    
@@ -368,7 +387,7 @@ def eval_loop(args):
     token_to_idx = look_up_tables["token_to_idx"]
 
     params_path = Path("model_params")
-    model_name = "min_cap_multiview_view_end"
+    model_name = "view_end"
     model = load_model(
         params_path / "config.json",
         params_path / (model_name + ".pth.tar"),
