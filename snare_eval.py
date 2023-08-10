@@ -358,11 +358,11 @@ def train_loop(args):
     iter_count = 0
     best_acc = 0
 
-    rnd_indices = torch.randperm(len(train_set))[:1000]
+    rnd_indices = torch.randperm(len(train_set))[:10000]
     rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
     train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
 
-    for epoch in range(10):
+    for epoch in range(2):
         print(f"start epoch {epoch}")
 
         iter_count = train(model, train_loader, iter_count, writer, args)
