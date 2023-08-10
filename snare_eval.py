@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 import pickle
+import time
 from typing import Optional
 
 import torch
@@ -23,6 +24,7 @@ ACCUMULATE_BATCH_SIZE = 32
 def get_args():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("--model-prefix", default=time.time())
     parser.add_argument("--params_path", default="compute_model_params")
     parser.add_argument("--test-view", action="store_true", default=False)
     parser.add_argument("--train", action="store_true", default=False)
@@ -372,9 +374,9 @@ def train_loop(args):
 
         if min_acc > best_acc:
             best_acc = min_acc
-            save_model(model, None, None, min_acc, iter_count)
+            save_model(model, None, None, min_acc, iter_count, prefix=args.model_prefix)
 
-    save_model(model, None, None, best_acc, iter_count, flag="end")
+    save_model(model, None, None, best_acc, iter_count, flag="end", prefix=args.model_prefix)
 
 
 def eval_loop(args):
