@@ -356,13 +356,14 @@ def train_loop(args):
 
     writer = SummaryWriter()
     iter_count = 0
-    best_acc = 0
+    best_acc = 0    
 
-    rnd_indices = torch.randperm(len(train_set))[:10000]
-    rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
-    train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
+    # rnd_indices = torch.randperm(len(train_set))[:10000]
+    # rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
+    # train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
+    train_loader = DataLoader(train_set, batch_size=1)
 
-    for epoch in range(2):
+    for epoch in range(3):
         print(f"start epoch {epoch}")
 
         iter_count = train(model, train_loader, iter_count, writer, args)
@@ -389,7 +390,7 @@ def eval_loop(args):
     token_to_idx = look_up_tables["token_to_idx"]
 
     params_path = Path("model_params")
-    model_name = "freeze_all_view_end"
+    model_name = "without_aux"
     model = load_model(
         params_path / "config.json",
         params_path / (model_name + ".pth.tar"),
