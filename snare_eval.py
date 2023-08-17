@@ -393,7 +393,7 @@ def eval_loop(args):
     token_to_idx = look_up_tables["token_to_idx"]
 
     params_path = Path("model_params")
-    model_name = "larger_train_no_freeze_multiview_cap_min_cap_view_view_contrastive"
+    model_name = "without_aux"
     model = load_model(
         params_path / "config.json",
         params_path / (model_name + ".pth.tar"),

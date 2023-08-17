@@ -103,8 +103,7 @@ class DenseCapModel(GeneralizedRCNN):
         if view_head is None:
             representation_size = 4096 if feat_size is None else feat_size
             view_head = ViewPredHead(
-                representation_size,
-                64,
+                representation_size,                
                 n_views)
 
         if box_predictor is None:
@@ -119,9 +118,8 @@ class DenseCapModel(GeneralizedRCNN):
                                          emb_size, rnn_num_layers, vocab_size, fusion_type)
             
         if view_predictor_head is None:
-            view_predictor_head = ViewPredHead(
-                hidden_size,
-                64,
+            view_predictor_head = CapViewPredHead(
+                hidden_size,                
                 n_views
             )
 
@@ -187,6 +185,26 @@ class DenseCapModel(GeneralizedRCNN):
         return losses
 
 
+class CapViewPredHead(nn.Module):
+    def __init__(self, in_channels=512, n_classes=8):
+        super(CapViewPredHead, self).__init__()
+
+        self.fc1 = nn.Linear(in_channels, 256)                
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.fc4 = nn.Linear(64, n_classes)
+
+    def forward(self, x):
+        x = x.flatten(start_dim=1)
+
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))        
+        x = self.fc4(x)
+
+        return x
+
+
 class ViewPredHead(nn.Module):
     """
     Standard heads for FPN-based models
@@ -197,44 +215,25 @@ class ViewPredHead(nn.Module):
         n_classes (int): numer of output classes
     """
 
-    def __init__(self, in_channels, hidden_size, n_classes):
+    def __init__(self, in_channels=4096, n_classes=8):
         super(ViewPredHead, self).__init__()
 
-        self.fc1 = nn.Linear(in_channels, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, n_classes)        
+        self.fc1 = nn.Linear(in_channels, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, 64)
+        self.fc6 = nn.Linear(64, n_classes)
 
     def forward(self, x):
         x = x.flatten(start_dim=1)
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-
-        return x
-
-
-class ViewHead(nn.Module):
-    """
-    Standard heads for FPN-based models
-
-    Arguments:
-        in_channels (int): number of input channels
-        hidden_size (int): hidden layer size
-        n_classes (int): numer of output classes
-    """
-
-    def __init__(self, in_channels, hidden_size, n_classes):
-        super(ViewHead, self).__init__()
-
-        self.fc6 = nn.Linear(in_channels, hidden_size)
-        self.fc7 = nn.Linear(hidden_size, n_classes)
-
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
-
-        x = F.relu(self.fc6(x))
-        x = self.fc7(x)
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        x = F.relu(self.fc5(x))
+        x = self.fc6(x)
 
         return x
 
