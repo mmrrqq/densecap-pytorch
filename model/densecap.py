@@ -166,18 +166,14 @@ class DenseCapModel(GeneralizedRCNN):
             tokenized = encode_caption(caption, self.token_to_idx, max_token_length=19)
             tokenized_captions.append(torch.tensor(tokenized, dtype=torch.long, device=self.device))
 
-        return torch.stack(tokenized_captions)
+        return torch.stack(tokenized_captions)    
     
 
-    def query_view_caption(self, target_image: torch.Tensor, caption: str):
-        images, _ = self.transform([target_image], None)
-        tokenized_captions = self.tokenize([caption])
-
-        features = self.backbone(images.tensors)
-        proposals, _ = self.rpn(images, features, None)
+    def query_view_caption(self, caption: str):        
+        tokenized_captions = self.tokenize([caption])        
 
         # returns predicted views, predicted best caption view
-        return self.roi_heads.view_predict(features, proposals, images.image_sizes, tokenized_captions)
+        return self.roi_heads.view_predict_query(tokenized_captions)
 
 
     def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: torch.Tensor):        
@@ -294,7 +290,7 @@ class FastRCNNPredictor(nn.Module):
 
 def densecap_resnet50_fpn(backbone_pretrained=False, **kwargs):
     weights = get_weight("ResNet50_Weights.DEFAULT") if backbone_pretrained else None
-    backbone = resnet_fpn_backbone(backbone_name='resnet50', weights=weights, trainable_layers=5)
+    backbone = resnet_fpn_backbone(backbone_name='resnet50', weights=weights)
     model = DenseCapModel(backbone, **kwargs)
 
     return model
