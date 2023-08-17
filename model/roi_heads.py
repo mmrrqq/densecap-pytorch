@@ -12,13 +12,10 @@ from torchvision.models.detection import _utils as det_utils
 
 class Loss(Enum):
     VIEW = 0
-    MULTIVIEW = 1
-    MODEL_CONTRASTIVE = 2
-    VIEW_CONTRASTIVE = 3
-    MIN_CAP = 4
-    MULTIVIEW_CAP = 5
-    VIEW_CONTRASTIVE_CAP = 6
-    MODEL_CONTRASTIVE_CAP = 7
+    MULTIVIEW = 1    
+    VIEW_CONTRASTIVE = 2
+    MIN_CAP = 3
+    MULTIVIEW_CAP = 4
 
 
 def predict_view_loss(view_predicts, gt_views):
@@ -168,19 +165,13 @@ class DenseCapRoIHeads(nn.Module):
             Loss.VIEW
             if l == "view"
             else Loss.MULTIVIEW
-            if l == "multiview"
-            else Loss.MODEL_CONTRASTIVE
-            if l == "model_contrastive"
+            if l == "multiview"            
             else Loss.VIEW_CONTRASTIVE
             if l == "view_contrastive"
             else Loss.MIN_CAP
             if l == "min_cap"
             else Loss.MULTIVIEW_CAP
-            if l == "multiview_cap"
-            else Loss.VIEW_CONTRASTIVE_CAP
-            if l == "view_contrastive_cap"
-            else Loss.MODEL_CONTRASTIVE_CAP
-            if l == "model_contrastive_cap"
+            if l == "multiview_cap"            
             else None
             for l in losses
         ]
@@ -655,15 +646,6 @@ class DenseCapRoIHeads(nn.Module):
                     view_features, pseudo_labels
                 )
 
-        # TODO: I can also add both, model and view contrastive.. contrast all views of gt model to all other views of other model
-        if Loss.MODEL_CONTRASTIVE in self.losses:
-            # TODO: get second model features..
-            raise NotImplementedError("model contrastive loss not implemented")
-        if Loss.VIEW_CONTRASTIVE_CAP in self.losses:
-            raise NotImplementedError
-        if Loss.MODEL_CONTRASTIVE_CAP in self.losses:
-            raise NotImplementedError
-
         # total_loss = reduce(
         #     lambda acc, x: acc + x,
         #     loss_dict.values(),
@@ -680,18 +662,10 @@ class DenseCapRoIHeads(nn.Module):
 
         return total_loss, loss_dict, min_loss_index, min_loss_index_per_view
     
-    def view_predict(
-            self, features, proposals, image_shapes, target_query
-    ):
-        box_features = self.box_roi_pool(features, proposals, image_shapes)
-        box_features = self.box_head(box_features)        
-
-        batch_size, _ = box_features.shape
+    def view_predict_query(self, target_query, batch_size=1):
         target_embeddings = target_query.expand(batch_size, -1)
-        target_lens = (target_query != 0).sum(dim=1)
-        target_lens = target_lens.expand(batch_size)
 
-        target_query = target_embeddings[0].unsqueeze(dim=0)        
+        target_query = target_embeddings[0].unsqueeze(dim=0)
         word_embeddings = self.box_describer.embedding_layer(target_query)               
         h, c = self.box_describer.init_hidden(1, self.device)
         
@@ -699,13 +673,24 @@ class DenseCapRoIHeads(nn.Module):
             x, (h, c) = self.box_describer.rnn(word_embeddings)
             
         sentence_embedding = h[0]
-        view_caption_prediction = self.view_predictor_head(sentence_embedding)        
-
-        view_predicts = self.view_head(box_features)        
-        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)
+        view_caption_prediction = self.view_predictor_head(sentence_embedding)
         _, view_caption_predicts = F.softmax(view_caption_prediction, dim=1).max(dim=1)
 
-        return view_predicts, view_caption_predicts
+        return view_caption_predicts
+    
+    
+    def view_predict(
+            self, features, proposals, image_shapes, target_query
+    ):
+        box_features = self.box_roi_pool(features, proposals, image_shapes)
+        box_features = self.box_head(box_features)
+
+        view_predicts = self.view_head(box_features)        
+        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)        
+        batch_size, _ = box_features.shape        
+        view_caption_prediction = self.view_predict_query(target_query, batch_size)
+
+        return view_predicts, view_caption_prediction
         
 
     def forward_query(
