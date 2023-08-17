@@ -365,7 +365,7 @@ def train_loop(args):
     # rnd_indices = torch.randperm(len(train_set))[:10000]
     # rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
     # train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
-    train_loader = DataLoader(train_set, batch_size=1)
+    train_loader = DataLoader(train_set, batch_size=1, shuffle=True)
 
     for epoch in range(3):
         print(f"start epoch {epoch}")
