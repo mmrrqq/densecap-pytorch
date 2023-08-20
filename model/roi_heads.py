@@ -171,7 +171,7 @@ class DenseCapRoIHeads(nn.Module):
             else Loss.MIN_CAP
             if l == "min_cap"
             else Loss.MULTIVIEW_CAP
-            if l == "multiview_cap"            
+            if l == "multiview_cap"    
             else None
             for l in losses
         ]
@@ -652,7 +652,11 @@ class DenseCapRoIHeads(nn.Module):
         #     torch.zeros((), device=self.device),
         # )
 
-        # temporary exclude cap view_prediction from total loss..
+        # scale caption loss
+        for key, value in loss_dict.items():
+            if key == "multiview_cap" or key == "cap_min":
+                loss_dict[key] = 0.2 * value
+        
         total_loss = torch.zeros((), device=self.device)
         for key, value in loss_dict.items():
             if key == "cap_mean" or key == "cap_std":
@@ -725,6 +729,6 @@ class DenseCapRoIHeads(nn.Module):
             min_caption_predicts_per_view = self.box_describer.forward_test(
                 box_features[min_loss_index_per_view]
             )
-            return loss, loss_dict, (min_caption_predicts[0], min_caption_predicts_per_view)
+            return loss, loss_dict, (min_caption_predicts[0], min_caption_predicts_per_view)        
 
         return loss, loss_dict, None

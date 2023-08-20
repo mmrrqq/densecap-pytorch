@@ -1,3 +1,10 @@
+# baseline snare test
+min:    0.70
+mean:   0.69
+min per view mean:      0.6941580756013745
+view pred:      0.12177835404872894
+cap view pred:  0.1168384924530983
+
 train the first two again, but on all training data!
 ## large_train_no_freeze_min_cap_view_view_contrastive
 pred:   0.70
