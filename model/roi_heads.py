@@ -524,7 +524,6 @@ class DenseCapRoIHeads(nn.Module):
 
         return result, losses
 
-    # TODO: add loss functions, return only one when inference
     def gather_losses(
         self,
         box_features,
@@ -606,10 +605,11 @@ class DenseCapRoIHeads(nn.Module):
         if Loss.MIN_CAP in self.losses:
             loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]        
 
+        # TODO: changed from sum to mean, prob. need to retrain..
         if Loss.MULTIVIEW_CAP in self.losses:
             loss_dict["multiview_cap"] = box_mean_caption_loss[
                 min_loss_index_per_view
-            ].sum()
+            ].mean()
 
         if Loss.VIEW in self.losses:            
             log_view_prediction = F.log_softmax(view_predicts, dim=1)
@@ -629,10 +629,9 @@ class DenseCapRoIHeads(nn.Module):
             view_features = F.normalize(
                 torch.flatten(view_features, start_dim=1), dim=1
             )
+            similarity = view_features @ view_features.T
 
             if Loss.MULTIVIEW in self.losses:
-                similarity = view_features @ view_features.T
-
                 targets = torch.full_like(
                     similarity, 1, dtype=float, device=self.device
                 )
@@ -642,9 +641,11 @@ class DenseCapRoIHeads(nn.Module):
                 pseudo_labels = torch.arange(
                     view_features.shape[0], device=self.device, dtype=torch.long
                 )
-                loss_dict["view_contrastive"] = F.cross_entropy(
-                    view_features, pseudo_labels
-                )
+                loss_x = F.cross_entropy(
+                    similarity, pseudo_labels
+                )                
+                                
+                loss_dict["view_contrastive"] = loss_x
 
         # total_loss = reduce(
         #     lambda acc, x: acc + x,
