@@ -657,6 +657,8 @@ class DenseCapRoIHeads(nn.Module):
         for key, value in loss_dict.items():
             if key == "multiview_cap" or key == "cap_min":
                 loss_dict[key] = 0.2 * value
+            if key == "multiview":
+                loss_dict[key] = 0.1 * value
         
         total_loss = torch.zeros((), device=self.device)
         for key, value in loss_dict.items():

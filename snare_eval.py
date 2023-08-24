@@ -25,8 +25,10 @@ def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--model-prefix", default=time.time())
-    parser.add_argument("--params_path", default="compute_model_params")
+    parser.add_argument("--params-path", default="model_params")
+    parser.add_argument("--model-name", default="xx")
     parser.add_argument("--test-view", action="store_true", default=False)
+    parser.add_argument("--test-iterations", default=10)
     parser.add_argument("--train", action="store_true", default=False)
     parser.add_argument("--alternating", action="store_true", default=False)
     parser.add_argument(
@@ -140,7 +142,7 @@ def train(
     accum_dict = {}
 
     for i, batch in enumerate(tqdm(data_loader)):
-        imgs, gt_idxs, keys, annotation, is_visual = batch
+        imgs, gt_idxs, _, annotation, is_visual = batch
 
         if is_visual.sum() < data_loader.batch_size or (gt_idxs < 0).sum() > 0:
             continue
@@ -392,11 +394,10 @@ def eval_loop(args):
     
     token_to_idx = look_up_tables["token_to_idx"]
 
-    params_path = Path("model_params")
-    model_name = "without_aux"
+    params_path = Path(args.params_path)    
     model = load_model(
         params_path / "config.json",
-        params_path / (model_name + ".pth.tar"),
+        params_path / (args.model_name + ".pth.tar"),
         return_features=False,
         losses=args.losses,
     )
@@ -414,10 +415,11 @@ def eval_loop(args):
     # test_loader = DataLoader(test_set, batch_size=1, sampler=rnd_sampler)
 
     if args.test_view:
-        test_view_prediction(model, test_loader)
-    else:
+        test_view_prediction(model, test_loader, iterations=args.test_iterations)
+    else:        
         acc_dict = test(model, test_loader)
-
+        print(acc_dict)
+        print(",".join([str((v.item() if torch.is_tensor(v) else v)) for v in acc_dict.values()]))
 
 def main():
     args = get_args()

@@ -30,7 +30,7 @@ def load_model(console_args):
                                   box_detections_per_img=console_args.box_per_img)
 
     checkpoint = torch.load(console_args.model_checkpoint)
-    model.load_state_dict(checkpoint['model'])
+    model.load_state_dict(checkpoint['model'], strict=False)
 
     if console_args.verbose and 'results_on_val' in checkpoint.keys():
         print('[INFO]: checkpoint {} loaded'.format(console_args.model_checkpoint))

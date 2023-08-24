@@ -1,9 +1,13 @@
+import argparse
+from pathlib import Path
+import pickle
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from utils.data_loader import DenseCapDataset
 from model.evaluator import DenseCapEvaluator
+from utils.model_io import load_model
 
 
 def quality_check(model, dataset, idx_to_token, device, max_iter=-1):
@@ -82,3 +86,37 @@ def quantity_check(model, dataset, idx_to_token, device, max_iter=-1, verbose=Tr
     print('MAP: {:.3f} DET_MAP: {:.3f}'.format(results['map'], results['detmap']))
 
     return results
+
+
+def parse_args():    
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument("--params-path", default="model_params")
+    parser.add_argument("--model-name", default="gpuX2")
+    parser.add_argument("--data-path", default="data")
+
+    args = parser.parse_args()
+    args.data_path = Path(args.data_path)
+
+    return args
+
+
+def main(args):
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")    
+    val_set = DenseCapDataset(args.data_path / "vg", args.data_path / "VG-regions-lite.h5", args.data_path / "VG-regions-dicts-lite.pkl", dataset_type='val')
+    idx_to_token = val_set.look_up_tables['idx_to_token']
+
+    params_path = Path(args.params_path)
+    model = load_model(
+        params_path / "config.json",
+        params_path / (args.model_name + ".pth.tar"),
+        return_features=False,        
+    )
+    model.eval()    
+
+    quantity_check(model, val_set, idx_to_token, device)
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    main(args)
