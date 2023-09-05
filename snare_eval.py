@@ -2,10 +2,10 @@ import argparse
 from pathlib import Path
 import pickle
 import time
-from typing import Optional
+from typing import Dict, Optional
 
 import torch
-from torch.utils.data import DataLoader, SubsetRandomSampler
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 from utils.model_io import load_model, save_model
@@ -22,6 +22,7 @@ ACCUMULATE_BATCH_SIZE = 64
 
 
 def get_args():
+    """Build argparser for training and evaluation configuration."""
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--model-prefix", default=time.time())
@@ -40,22 +41,15 @@ def get_args():
     return parser.parse_args()
 
 
-def print_decode_caption(cap: torch.Tensor, idx_to_token):
-    for i in cap:
-        if i < 1:
-            break
-        print(idx_to_token[i.item()], end=" ")
-
-    print("\n")
-
-
-def train(
+def fine_tune(
     model: DenseCapModel,
     data_loader: DataLoader,
     iter_offset: int = 0,
     writer: Optional[SummaryWriter] = None,
     args = {}
 ):
+    """Fine tune the DenseCapModel using the provided SNARE DataLoader.
+    """
     model.train()
 
     # freeze region proposals
@@ -65,15 +59,6 @@ def train(
 
     for param in model.roi_heads.box_predictor.parameters():
         param.requires_grad = False
-
-    # TEMP: freeze all layers except view predictors..
-    # for name, param in model.named_parameters():
-    #     if "box_describer" not in name and "view_head" not in name and "view_predictor_head" not in name:
-    #         param.requires_grad = False
-
-    # for param in model.roi_heads.box_describer.parameters():
-    #     param.requires_grad = False
-    # END TEMP: freeze all layers except view predictors..
 
     view_ids = torch.arange(8)    
 
@@ -147,8 +132,7 @@ def train(
         if is_visual.sum() < data_loader.batch_size or (gt_idxs < 0).sum() > 0:
             continue
 
-        imgs = [img.squeeze().to(device) for img in imgs]
-        # key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
+        imgs = [img.squeeze().to(device) for img in imgs]        
 
         loss, loss_dict, _ = model.query_caption(imgs, annotation, view_ids)        
 
@@ -159,12 +143,14 @@ def train(
 
         loss.backward()
 
+        # accumulate each loss..
         for k, v in loss_dict.items():
             if accum_dict.get(k):
                 accum_dict[k] += v.item() / ACCUMULATE_BATCH_SIZE
             else:
                 accum_dict[k] = v.item() / ACCUMULATE_BATCH_SIZE
 
+        # .. until accumulation batch size or data end is reached
         if ((iter_count + 1) % ACCUMULATE_BATCH_SIZE == 0) or (
             iter_count + 1 == len(data_loader)
         ):
@@ -192,7 +178,11 @@ def train(
     return iter_count
 
 
-def test(model: DenseCapModel, data_loader: DataLoader):
+def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
+    """Calculate accuracy metrics for the given model on the SNARE benchmark validation fold.
+
+    Returns: Dictionary containing accuracies calculated using different metrics. Indexed by metric name.
+    """
     model.eval()
     view_ids = torch.arange(8)
 
@@ -204,6 +194,9 @@ def test(model: DenseCapModel, data_loader: DataLoader):
     view_pred_total = 0
     cap_view_pred_correct = 0
 
+    cap_view_dict = { i.item(): 0 for i in view_ids }    
+    min_cap_view_dict = { i.item(): 0 for i in view_ids }
+
     with torch.no_grad():
         for batch in tqdm(data_loader):
             (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch
@@ -213,6 +206,7 @@ def test(model: DenseCapModel, data_loader: DataLoader):
 
             annotation = annotation[0]
 
+            # swap images if key2 is referenced
             if gt_idx > 0:
                 key1_imgs, key2_imgs = key2_imgs, key1_imgs
 
@@ -224,6 +218,7 @@ def test(model: DenseCapModel, data_loader: DataLoader):
             key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
             _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
             
+            # collect correct assignments
             n += 1
             if losses2["cap_min"] > losses1["cap_min"]:
                 min_pos += 1
@@ -238,6 +233,8 @@ def test(model: DenseCapModel, data_loader: DataLoader):
             view_pred_total += len(view_preds)
             view_pred_correct += (view_preds == view_ids).sum()
             cap_view_pred_correct += (losses1["cap_min_view"] == losses1["view_cap_preds"]).sum()
+            cap_view_dict[losses1["view_cap_preds"].item()] += 1
+            min_cap_view_dict[losses1["cap_min_view"].item()] += 1
 
     mean_acc = mean_pos / n    
     min_acc = min_pos / n
@@ -248,6 +245,8 @@ def test(model: DenseCapModel, data_loader: DataLoader):
     print(
         f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nview pred:\t{view_pred_acc}\ncap view pred:\t{cap_view_pred_acc}"
     )
+    print(cap_view_dict)
+    print(min_cap_view_dict)
     return {
         "min_acc": min_acc,
         "mean_acc": mean_acc,
@@ -273,6 +272,9 @@ def view_predict(model: DenseCapModel, images, query: str, best_view_id: int):
 
 
 def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iterations=10):
+    """Test the caption view prediction performance of the model using the SNARE validation fold for :iterations.
+    Calculate accuracy using random vs predicted vantage point and print results.    
+    """
     model.eval()        
 
     rnd_accs = []
@@ -297,7 +299,7 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
                     key1_imgs, key2_imgs = key2_imgs, key1_imgs
 
                 key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
-                best_view_id = model.query_view_caption(annotation).cpu().item()                
+                best_view_id = model.query_view_caption(annotation).cpu().item()
                 best_view_losses1, random_losses1 = view_predict(model, key1_imgs, annotation, best_view_id)
 
                 del key1_imgs
@@ -334,7 +336,9 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
     print(rnd_accs)
 
 
-def train_loop(args):
+def fine_tune_loop(args):
+    """Setup and loop the fine tuning.
+    """
     print(args.losses)
     lut_path = Path("./data/VG-regions-dicts-lite.pkl")
 
@@ -363,16 +367,13 @@ def train_loop(args):
     writer = SummaryWriter()
     iter_count = 0
     best_acc_dict = {}
-
-    # rnd_indices = torch.randperm(len(train_set))[:10000]
-    # rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
-    # train_loader = DataLoader(train_set, batch_size=1, sampler=rnd_sampler)
+    
     train_loader = DataLoader(train_set, batch_size=1, shuffle=True)
 
     for epoch in range(3):
         print(f"start epoch {epoch}")
 
-        iter_count = train(model, train_loader, iter_count, writer, args)
+        iter_count = fine_tune(model, train_loader, iter_count, writer, args)
 
         acc_dict = test(model, test_loader)        
         for k, v in acc_dict.items():
@@ -386,7 +387,7 @@ def train_loop(args):
     save_model(model, None, None, 0, iter_count, flag="end", prefix=args.model_prefix)
 
 
-def eval_loop(args):
+def eval_model(args):
     lut_path = Path("./data/VG-regions-dicts-lite.pkl")
 
     with open(lut_path, "rb") as f:
@@ -407,12 +408,7 @@ def eval_loop(args):
     model.toDevice(device)
 
     test_set = SnareDataset(mode="valid", filter_visual=True)
-
-    test_loader = DataLoader(test_set, batch_size=1)
-
-    # rnd_indices = torch.randperm(len(test_set))[:10]
-    # rnd_sampler = SubsetRandomSampler(indices=rnd_indices)
-    # test_loader = DataLoader(test_set, batch_size=1, sampler=rnd_sampler)
+    test_loader = DataLoader(test_set, batch_size=1)    
 
     if args.test_view:
         test_view_prediction(model, test_loader, iterations=args.test_iterations)
@@ -424,9 +420,9 @@ def eval_loop(args):
 def main():
     args = get_args()
     if args.train:
-        train_loop(args)
+        fine_tune_loop(args)
     else:
-        eval_loop(args)
+        eval_model(args)
 
 
 if __name__ == "__main__":

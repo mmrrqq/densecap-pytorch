@@ -38,8 +38,8 @@ class DenseCapModel(GeneralizedRCNN):
                  rpn_fg_iou_thresh=0.7, rpn_bg_iou_thresh=0.3,
                  rpn_batch_size_per_image=256, rpn_positive_fraction=0.5,
                  # Box parameters                 
-                 view_head=None, n_views=8,
-                 view_predictor_head = None,
+                 view_predictor_head=None, n_views=8,
+                 caption_view_predictor_head = None,
                  box_roi_pool=None, box_head=None, box_predictor=None,
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
@@ -100,9 +100,9 @@ class DenseCapModel(GeneralizedRCNN):
                 out_channels * resolution ** 2,
                 representation_size)
             
-        if view_head is None:
+        if view_predictor_head is None:
             representation_size = 4096 if feat_size is None else feat_size
-            view_head = ViewPredHead(
+            view_predictor_head = ViewPredictorHead(
                 representation_size,                
                 n_views)
 
@@ -117,8 +117,8 @@ class DenseCapModel(GeneralizedRCNN):
             box_describer = BoxDescriber(representation_size, hidden_size, max_len,
                                          emb_size, rnn_num_layers, vocab_size, fusion_type)
             
-        if view_predictor_head is None:
-            view_predictor_head = CapViewPredHead(
+        if caption_view_predictor_head is None:
+            caption_view_predictor_head = CaptionViewPredictionHead(
                 hidden_size,                
                 n_views
             )
@@ -127,8 +127,8 @@ class DenseCapModel(GeneralizedRCNN):
             # Caption
             box_describer,
             # Box
-            view_head,
             view_predictor_head,
+            caption_view_predictor_head,
             box_roi_pool, box_head, box_predictor,
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,
@@ -168,6 +168,8 @@ class DenseCapModel(GeneralizedRCNN):
     
 
     def query_view_caption(self, caption: str):        
+        """Predict the best vantage point for the given caption string.
+        """
         tokenized_captions = self.tokenize([caption])        
 
         # returns predicted views, predicted best caption view
@@ -175,19 +177,30 @@ class DenseCapModel(GeneralizedRCNN):
 
 
     def query_caption(self, target_images: List[torch.Tensor], captions: List[str], views: torch.Tensor):        
+        """Return the region losses/scores given the target caption.
+        """
         images, _ = self.transform(target_images, None)
         tokenized_captions = self.tokenize(captions)
 
-        features = self.backbone(images.tensors)
+        features = self.backbone(images.tensors)        
         proposals, _ = self.rpn(images, features, None)
         losses = self.roi_heads.forward_query(features, proposals, images.image_sizes, tokenized_captions, views)
 
         return losses
 
 
-class CapViewPredHead(nn.Module):
+class CaptionViewPredictionHead(nn.Module):
+    """
+    Head for vantage point predictions from caption embeddings. 
+    Roughly halves the features from in_channels to n_classes.
+
+    Arguments:
+        in_channels (int): number of input channels        
+        n_classes (int): numer of output classes
+    """
+
     def __init__(self, in_channels=512, n_classes=8):
-        super(CapViewPredHead, self).__init__()
+        super(CaptionViewPredictionHead, self).__init__()
 
         self.fc1 = nn.Linear(in_channels, 256)                
         self.fc2 = nn.Linear(256, 128)
@@ -205,18 +218,18 @@ class CapViewPredHead(nn.Module):
         return x
 
 
-class ViewPredHead(nn.Module):
+class ViewPredictorHead(nn.Module):
     """
-    Standard heads for FPN-based models
+    Head for vantage point predictions from region features. 
+    Roughly halves the features from in_channels to n_classes.
 
     Arguments:
-        in_channels (int): number of input channels
-        hidden_size (int): hidden layer size
+        in_channels (int): number of input channels        
         n_classes (int): numer of output classes
     """
 
     def __init__(self, in_channels=4096, n_classes=8):
-        super(ViewPredHead, self).__init__()
+        super(ViewPredictorHead, self).__init__()
 
         self.fc1 = nn.Linear(in_channels, 1024)
         self.fc2 = nn.Linear(1024, 512)

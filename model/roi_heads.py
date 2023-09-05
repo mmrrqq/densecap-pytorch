@@ -9,10 +9,13 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision.ops import boxes as box_ops
 from torchvision.models.detection import _utils as det_utils
 
+CAPTION_LOSS_FACTOR = 0.2
+MULTIVIEW_LOSS_FACTOR = 0.1
+
 
 class Loss(Enum):
     VIEW = 0
-    MULTIVIEW = 1    
+    MULTIVIEW = 1
     VIEW_CONTRASTIVE = 2
     MIN_CAP = 3
     MULTIVIEW_CAP = 4
@@ -160,25 +163,25 @@ class DenseCapRoIHeads(nn.Module):
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
         self.detections_per_img = detections_per_img
-        
+
         self.losses = [
             Loss.VIEW
             if l == "view"
             else Loss.MULTIVIEW
-            if l == "multiview"            
+            if l == "multiview"
             else Loss.VIEW_CONTRASTIVE
             if l == "view_contrastive"
             else Loss.MIN_CAP
             if l == "min_cap"
             else Loss.MULTIVIEW_CAP
-            if l == "multiview_cap"    
+            if l == "multiview_cap"
             else None
             for l in losses
         ]
 
         if None in self.losses:
             raise Exception("invalid loss name argument")
-        
+
         self.decode_query_caption = False
 
     def assign_targets_to_proposals(self, proposals, gt_boxes, gt_labels):
@@ -532,8 +535,7 @@ class DenseCapRoIHeads(nn.Module):
         boxes_per_image,
         target_view,
     ):
-        # ["view", "multiview", "model_contrastive", "view_contrastive"]
-        loss_caption = query_caption_loss(caption_predicts, target_embeddings)        
+        loss_caption = query_caption_loss(caption_predicts, target_embeddings)
 
         box_mean_caption_loss = loss_caption.mean(dim=1)
 
@@ -544,7 +546,9 @@ class DenseCapRoIHeads(nn.Module):
 
         min_loss_index_per_view = [view.argmin() for view in loss_caption_per_view]
         mean_loss_per_view = [view.mean() for view in loss_caption_per_view]
-        min_mean_loss_view_id = torch.tensor(mean_loss_per_view, device=box_mean_caption_loss.device).argmin()
+        min_mean_loss_view_id = torch.tensor(
+            mean_loss_per_view, device=box_mean_caption_loss.device
+        ).argmin()
         min_loss_index_per_view = torch.tensor(
             [index_mapping[i][idx] for i, idx in enumerate(min_loss_index_per_view)]
         )
@@ -554,56 +558,64 @@ class DenseCapRoIHeads(nn.Module):
         loss_dict = {
             "cap_mean": box_mean_caption_loss.mean(),
             "cap_std": box_mean_caption_loss.std(),
-        }        
+        }
 
         # GET SENTENCE EMBEDDING FOR GT CAP VIA LSTM
-        target_query = target_embeddings[0].unsqueeze(dim=0)        
-        word_embeddings = self.box_describer.embedding_layer(target_query)               
-        h, c = self.box_describer.init_hidden(1, self.device)
-        
-        with torch.no_grad():            
-            x, (h, c) = self.box_describer.rnn(word_embeddings)
-            
-        sentence_embedding = h[0]
-        view_caption_prediction = self.view_predictor_head(sentence_embedding)        
-        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()                
+        target_query = target_embeddings[0].unsqueeze(dim=0)
+        word_embeddings = self.box_describer.embedding_layer(target_query)
 
-        if self.training:            
+        with torch.no_grad():
+            _, (h, _) = self.box_describer.rnn(word_embeddings)
+
+        sentence_embedding = h[0]
+        view_caption_prediction = self.view_predictor_head(sentence_embedding)
+        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
+
+        if self.training:
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
             # TODO: alternatively, create distribution once and roll array.
-            min_view_distribution = torch.zeros((8,), device=min_mean_loss_view_id.device)
+            min_view_distribution = torch.zeros(
+                (8,), device=min_mean_loss_view_id.device
+            )
             min_view_distribution[min_view_id] = 1
             min_view_distribution[min_view_id - 1] = 0.125
             min_view_distribution[(min_view_id + 1) % 8] = 0.125
             min_view_distribution /= min_view_distribution.sum()
-            loss_dict["view_prediction"] = F.kl_div(log_view_caption_prediction, min_view_distribution, reduction='batchmean')
-        # END                
+            loss_dict["view_prediction"] = F.kl_div(
+                log_view_caption_prediction,
+                min_view_distribution,
+                reduction="batchmean",
+            )
+        # END SENTENCE EMBEDDING
 
         view_predicts = self.view_head(box_features[min_loss_index_per_view])
         gt_views = [
             v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
         ]
-        gt_views = (
-            torch.cat(gt_views, 0)
-            .to(view_predicts.device)[min_loss_index_per_view]                
-        )
+        gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[
+            min_loss_index_per_view
+        ]
 
         if not self.training:
             _, view_predicts = view_predicts.max(dim=1)
             _, view_caption_predicts = view_caption_prediction.max(dim=1)
 
             loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
-            loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[min_loss_index_per_view].mean()
-            loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[min_loss_index_per_view].std()                                 
+            loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[
+                min_loss_index_per_view
+            ].mean()
+            loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[
+                min_loss_index_per_view
+            ].std()
             loss_dict["view_preds"] = view_predicts
             loss_dict["view_cap_preds"] = view_caption_predicts
             loss_dict["cap_min_view"] = min_view_id
             loss_dict["mean_loss_view_id"] = min_mean_loss_view_id
 
             return None, loss_dict, min_loss_index, min_loss_index_per_view
-        
+
         if Loss.MIN_CAP in self.losses:
-            loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]        
+            loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
 
         # TODO: changed from sum to mean, prob. need to retrain..
         if Loss.MULTIVIEW_CAP in self.losses:
@@ -611,17 +623,25 @@ class DenseCapRoIHeads(nn.Module):
                 min_loss_index_per_view
             ].mean()
 
-        if Loss.VIEW in self.losses:            
+        if Loss.VIEW in self.losses:
             log_view_prediction = F.log_softmax(view_predicts, dim=1)
 
-            min_view_distribution = torch.zeros((8,8,), device=gt_views.device)
+            min_view_distribution = torch.zeros(
+                (
+                    8,
+                    8,
+                ),
+                device=gt_views.device,
+            )
             for i, view in enumerate(gt_views):
                 min_view_distribution[i, view] = 1
                 min_view_distribution[i, view - 1] = 0.125
                 min_view_distribution[i, (view + 1) % 8] = 0.125
                 min_view_distribution[i] /= min_view_distribution[i].sum()
 
-            loss_dict["view"] = F.kl_div(log_view_prediction, min_view_distribution, reduction='batchmean')            
+            loss_dict["view"] = F.kl_div(
+                log_view_prediction, min_view_distribution, reduction="batchmean"
+            )
             # loss_dict["view"] = predict_view_loss(view_predicts, gt_views)
 
         if Loss.MULTIVIEW in self.losses or Loss.VIEW_CONTRASTIVE in self.losses:
@@ -641,82 +661,68 @@ class DenseCapRoIHeads(nn.Module):
                 pseudo_labels = torch.arange(
                     view_features.shape[0], device=self.device, dtype=torch.long
                 )
-                loss_x = F.cross_entropy(
-                    similarity, pseudo_labels
-                )                
-                                
+                loss_x = F.cross_entropy(similarity, pseudo_labels)
+
                 loss_dict["view_contrastive"] = loss_x
 
-        # total_loss = reduce(
-        #     lambda acc, x: acc + x,
-        #     loss_dict.values(),
-        #     torch.zeros((), device=self.device),
-        # )
-
-        # scale caption loss
+        # scale caption and multiview losses
         for key, value in loss_dict.items():
             if key == "multiview_cap" or key == "cap_min":
-                loss_dict[key] = 0.2 * value
+                loss_dict[key] = CAPTION_LOSS_FACTOR * value
             if key == "multiview":
-                loss_dict[key] = 0.1 * value
-        
+                loss_dict[key] = MULTIVIEW_LOSS_FACTOR * value
+
         total_loss = torch.zeros((), device=self.device)
         for key, value in loss_dict.items():
             if key == "cap_mean" or key == "cap_std":
                 continue
-            
+
             total_loss += value
 
         return total_loss, loss_dict, min_loss_index, min_loss_index_per_view
-    
+
     def view_predict_query(self, target_query, batch_size=1):
         target_embeddings = target_query.expand(batch_size, -1)
 
         target_query = target_embeddings[0].unsqueeze(dim=0)
-        word_embeddings = self.box_describer.embedding_layer(target_query)               
-        h, c = self.box_describer.init_hidden(1, self.device)
-        
-        with torch.no_grad():            
-            x, (h, c) = self.box_describer.rnn(word_embeddings)
-            
+        word_embeddings = self.box_describer.embedding_layer(target_query)
+
+        with torch.no_grad():
+            _, (h, _) = self.box_describer.rnn(word_embeddings)
+
         sentence_embedding = h[0]
         view_caption_prediction = self.view_predictor_head(sentence_embedding)
         _, view_caption_predicts = F.softmax(view_caption_prediction, dim=1).max(dim=1)
 
         return view_caption_predicts
-    
-    
-    def view_predict(
-            self, features, proposals, image_shapes, target_query
-    ):
+
+    def view_predict(self, features, proposals, image_shapes, target_query):
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
 
-        view_predicts = self.view_head(box_features)        
-        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)        
-        batch_size, _ = box_features.shape        
+        view_predicts = self.view_head(box_features)
+        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)
+        batch_size, _ = box_features.shape
         view_caption_prediction = self.view_predict_query(target_query, batch_size)
 
         return view_predicts, view_caption_prediction
-        
 
     def forward_query(
         self, features, proposals, image_shapes, target_query, target_view
     ):
         box_features = self.box_roi_pool(features, proposals, image_shapes)
-        box_features = self.box_head(box_features)        
+        box_features = self.box_head(box_features)
 
         batch_size, _ = box_features.shape
         target_embeddings = target_query.expand(batch_size, -1)
         target_lens = (target_query != 0).sum(dim=1)
         target_lens = target_lens.expand(batch_size)
 
-        # TODO: do not forward train for inference
         caption_predicts = self.box_describer.forward_train(
             box_features, target_embeddings, target_lens
         )
-        boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]        
-        
+        boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]
+
         loss, loss_dict, min_loss_index, min_loss_index_per_view = self.gather_losses(
             caption_predicts=caption_predicts,
             target_embeddings=target_embeddings,
@@ -732,6 +738,10 @@ class DenseCapRoIHeads(nn.Module):
             min_caption_predicts_per_view = self.box_describer.forward_test(
                 box_features[min_loss_index_per_view]
             )
-            return loss, loss_dict, (min_caption_predicts[0], min_caption_predicts_per_view)        
+            return (
+                loss,
+                loss_dict,
+                (min_caption_predicts[0], min_caption_predicts_per_view),
+            )
 
         return loss, loss_dict, None
