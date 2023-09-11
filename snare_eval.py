@@ -23,11 +23,11 @@ ACCUMULATE_BATCH_SIZE = 64
 
 def get_args():
     """Build argparser for training and evaluation configuration."""
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()    
 
     parser.add_argument("--model-prefix", default=time.time())
     parser.add_argument("--params-path", default="model_params")
-    parser.add_argument("--model-name", default="xx")
+    parser.add_argument("--model-name")
     parser.add_argument("--test-view", action="store_true", default=False)
     parser.add_argument("--test-iterations", default=10)
     parser.add_argument("--train", action="store_true", default=False)
@@ -37,6 +37,9 @@ def get_args():
         nargs="+",
         default=["view", "multiview", "view_contrastive", "min_cap", "multiview_cap"],
     )
+
+    parser.add_argument("--snare-annotations-path", default="../snare/amt/folds_adversarial")
+    parser.add_argument("--snare-screenshots-path", default="../snare/data/screenshots")
 
     return parser.parse_args()
 
@@ -232,6 +235,8 @@ def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
             view_preds = losses1["view_preds"].cpu()
             view_pred_total += len(view_preds)
             view_pred_correct += (view_preds == view_ids).sum()
+            print(view_pred_correct)     
+            print(view_pred_correct / view_pred_total)       
             cap_view_pred_correct += (losses1["cap_min_view"] == losses1["view_cap_preds"]).sum()
             cap_view_dict[losses1["view_cap_preds"].item()] += 1
             min_cap_view_dict[losses1["cap_min_view"].item()] += 1
@@ -265,10 +270,19 @@ def view_predict(model: DenseCapModel, images, query: str, best_view_id: int):
     rnd_img = images[rnd_view_id]    
 
     pred_best_img = images[best_view_id]
-    _, best_view_losses, _ = model.query_caption([pred_best_img], [query], torch.tensor([best_view_id]))
-    _, random_view_losses, _ = model.query_caption([rnd_img], [query], torch.tensor([rnd_view_id]))
+    _, best_view_losses, (best_view_caption, _) = model.query_caption([pred_best_img], [query], torch.tensor([best_view_id]))
+    _, random_view_losses, (random_view_caption, _) = model.query_caption([rnd_img], [query], torch.tensor([rnd_view_id]))    
 
-    return best_view_losses, random_view_losses
+    return best_view_losses, random_view_losses, (rnd_view_id, random_view_caption, best_view_caption)
+
+
+def print_decode_caption(cap: torch.Tensor, idx_to_token):
+    for i in cap:
+        if i < 1:
+            break
+        print(idx_to_token[i.item()], end=" ")
+    
+    print("\n")
 
 
 def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iterations=10):
@@ -294,18 +308,22 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
                     continue
 
                 annotation = annotation[0]
+                if not ("back" in annotation.lower().split(" ")):
+                    continue
 
                 if gt_idx > 0:
+                    key1, key2 = key2, key1
                     key1_imgs, key2_imgs = key2_imgs, key1_imgs
 
                 key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
-                best_view_id = model.query_view_caption(annotation).cpu().item()
-                best_view_losses1, random_losses1 = view_predict(model, key1_imgs, annotation, best_view_id)
-
+                best_view_id = model.query_view_caption(annotation).cpu().item()                
+                
+                best_view_losses1, random_losses1, (rnd_view_id1, rnd_view_caption1, best_view_caption1) = view_predict(model, key1_imgs, annotation, best_view_id)                
+                
                 del key1_imgs
-
+                
                 key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
-                best_view_losses2, random_losses2 = view_predict(model, key2_imgs, annotation, best_view_id)
+                best_view_losses2, random_losses2, (rnd_view_id2, rnd_view_caption2, best_view_caption2) = view_predict(model, key2_imgs, annotation, best_view_id)
                 
                 n += 1
                 if best_view_losses2["cap_min"] > best_view_losses1["cap_min"]:
@@ -313,6 +331,16 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
 
                 if random_losses2["cap_min"] > random_losses1["cap_min"]:
                     random_pos += 1
+
+                best_view_pred1 = best_view_losses1['view_preds'].cpu().item()
+                best_view_pred2 = best_view_losses2['view_preds'].cpu().item()
+                random_view_pred1 = random_losses1['view_preds'].cpu().item()
+                random_view_pred2 = random_losses2['view_preds'].cpu().item()
+                # if rnd_view_id1 == random_view_pred1 and best_view_pred1 == best_view_id and not random_losses2["cap_min"] > random_losses1["cap_min"] and best_view_losses2["cap_min"] > best_view_losses1["cap_min"]:
+                print(f"{annotation} view: {rnd_view_id1} (pred: {random_view_pred1}) best view: {best_view_id} (pred {best_view_pred1}); id: {key1} ")                    
+                print(f"distractor id: {key2}")
+                print_decode_caption(rnd_view_caption1, model.idx_to_token)
+                print_decode_caption(best_view_caption1, model.idx_to_token)                    
 
                 if i % 100 == 0:
                     pred_acc = pred_pos / n
@@ -346,6 +374,7 @@ def fine_tune_loop(args):
         look_up_tables = pickle.load(f)
     
     token_to_idx = look_up_tables["token_to_idx"]
+    idx_to_token = look_up_tables["idx_to_token"]
 
     params_path = Path("compute_model_params")
     model_name = "without_aux"
@@ -357,11 +386,12 @@ def fine_tune_loop(args):
     )
     model.name = "_".join(args.losses)
     model.token_to_idx = token_to_idx
+    model.idx_to_token = idx_to_token
 
     model.toDevice(device)
-    test_set = SnareDataset(mode="valid", filter_visual=True)
+    test_set = SnareDataset(args.snare_annotations_path, args.snare_screenshots_path, mode="valid", filter_visual=True)
 
-    train_set = SnareDataset(mode="train", filter_visual=True)
+    train_set = SnareDataset(args.snare_annotations_path, args.snare_screenshots_path, mode="train", filter_visual=True)
     test_loader = DataLoader(test_set, batch_size=1)
 
     writer = SummaryWriter()
@@ -394,8 +424,9 @@ def eval_model(args):
         look_up_tables = pickle.load(f)
     
     token_to_idx = look_up_tables["token_to_idx"]
+    idx_to_token = look_up_tables["idx_to_token"]
 
-    params_path = Path(args.params_path)    
+    params_path = Path(args.params_path)        
     model = load_model(
         params_path / "config.json",
         params_path / (args.model_name + ".pth.tar"),
@@ -403,11 +434,12 @@ def eval_model(args):
         losses=args.losses,
     )
     model.name = "_".join(args.losses)
-    model.token_to_idx = token_to_idx
+    model.token_to_idx = token_to_idx    
+    model.idx_to_token = idx_to_token
 
     model.toDevice(device)
 
-    test_set = SnareDataset(mode="valid", filter_visual=True)
+    test_set = SnareDataset(args.snare_annotations_path, args.snare_screenshots_path, mode="valid", filter_visual=True)
     test_loader = DataLoader(test_set, batch_size=1)    
 
     if args.test_view:

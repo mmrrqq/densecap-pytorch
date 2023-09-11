@@ -11,14 +11,11 @@ import json
 
 from PIL import Image
 
-
-shapenet_base_path = Path("../snare/data/screenshots")
-annotations_path = Path("../snare/amt/folds_adversarial")
-
-
 class SnareDataset(torch.utils.data.Dataset):
 
-    def __init__(self, mode='train', transform=None, filter_visual=False):
+    def __init__(self, snare_annotations_path: str, screenshots_base_path: str, mode='train', transform=None, filter_visual=False):
+        self.snare_annotations_path = Path(snare_annotations_path)
+        self.screenshots_base_path = Path(screenshots_base_path)
         self.total_views = 14        
         self.mode = mode        
         self.transform = transform
@@ -43,10 +40,10 @@ class SnareDataset(torch.utils.data.Dataset):
             raise RuntimeError('mode not recognized, should be train, valid or test: ' + str(self.mode))
 
         # load amt data
-        self.keys = list([p.name for p in shapenet_base_path.iterdir() if p.is_dir()])
+        self.keys = list([p.name for p in self.screenshots_base_path.iterdir() if p.is_dir()])
         self.data = []
         for file in self.files:
-            fname_rel = annotations_path / file            
+            fname_rel = self.snare_annotations_path / file            
             with open(fname_rel, 'r') as f:
                 self.data = self.data + json.load(f)
 
@@ -59,7 +56,7 @@ class SnareDataset(torch.utils.data.Dataset):
         return len(self.data)    
     
     def get_imgs(self, key: str):
-        model_path = shapenet_base_path / key        
+        model_path = self.screenshots_base_path / key        
 
         intermediate_dict = {}        
         for p in model_path.iterdir():

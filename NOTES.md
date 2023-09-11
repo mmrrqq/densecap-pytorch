@@ -1,35 +1,3 @@
-# baseline snare test
-min:    0.70
-mean:   0.69
-min per view mean:      0.6941580756013745
-view pred:      0.12177835404872894
-cap view pred:  0.1168384924530983
-
-train the first two again, but on all training data!
-## large_train_no_freeze_min_cap_view_view_contrastive
-pred:   0.70
-random: 0.61
-
-## large_train_no_freeze_min_cap_view
-pred:   0.70
-random: 0.67
-
-## baseline
-random: ~0.66
-
-
-
-
-## larger_train_no_freeze_multiview_cap_min_cap_view_view_contrastive, 10 runs
-predicted:
-
-`[0.7551546391752577, 0.7551546391752577, 0.7542955326460481, 0.7542955326460481, 0.7551546391752577, 0.7551546391752577, 0.7551546391752577, 0.7551546391752577, 0.7551546391752577, 0.7551546391752577]`
-
-random:
-
-`[0.7250859106529209, 0.7362542955326461, 0.7233676975945017, 0.7362542955326461, 0.7474226804123711, 0.7353951890034365, 0.7345360824742269, 0.7310996563573883, 0.7207903780068728, 0.7362542955326461]`
-
-
 baseline -> without_aux
 min_cap -> 1692539407.659011_min_acc_min_cap
 min_cap_view -> 1692539431.9839504_min_acc_min_cap_view
@@ -64,3 +32,33 @@ zwar scheint der caption view predictor auf die front views zu fitten, so schein
 es könnte auch ein data bias sein
 selbst wenn nicht, dann lässt sich mit der view prediction zusammen sinnvolle aussagen treffen..
 
+
+
+A white cabinet with 2 doors view: 1 (pred: 1) best view: 7 (pred 7); id: ('ef3b459ecb092dc5738e43095496b061',) 
+distractor id: ('b5e8e3356b99a8478542f96306060db4',)
+<bos> a train <eos> 
+
+<bos> white cabinet with door <eos> 
+
+
+
+medium brown dresser view: 5 (pred: 5) best view: 0 (pred 0); id: ('4ef699bfb20dcb1ac00fd1150223027',) 
+distractor id: ('aea6f0ddc6450d490546f5d45015351',)
+<bos> a brown cardboard box <eos> 
+
+<bos> brown dresser <eos> 
+
+
+## BAD
+tall grey cabinet with a brown front view: 2 (pred: 2) best view: 0 (pred 0); id: ('3d95c4ebb88f94b3d2f054448bd437d6',) 
+distractor id: ('8753d446360545aeb554b42ae3ae3fa0',)
+<bos> a black chair <eos> 
+
+<bos> a green chair <eos> 
+
+
+
+
+## spatial cues in annotations:
+validation: 35 / 1164
+train: 406 / 20085

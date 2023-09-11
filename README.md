@@ -1,3 +1,40 @@
+# Transfer Dense Captioning to SNARE
+
+## Installation
+We use python 3.8 for our experiments, other version may work.
+1. If you like, create a python environment and activate it, for example using conda: `conda create -n dnscp python=3.8 && conda activate dnscp`
+2. Install the dependencies using pip and the provided requirements file by running: `pip install -r requirements.txt`
+### Data
+Get snare and screenshots data, set the `--snare-annotations-path` and `snare-screenshots-path` arguments respectively.
+
+## Pre training
+Please see the original README below for training on Visual Genome. We provide a pre trained version here (WO LINK?)
+## Fine tuning
+Fine tuning is started using the `snare_eval.py` script. 
+```
+usage: snare_eval.py [-h] [--model-prefix MODEL_PREFIX] [--params-path PARAMS_PATH] [--model-name MODEL_NAME] [--test-view] [--test-iterations TEST_ITERATIONS] [--train] [--alternating]
+                     [--losses LOSSES [LOSSES ...]]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --model-prefix MODEL_PREFIX
+  --params-path PARAMS_PATH
+  --model-name MODEL_NAME
+  --test-view
+  --test-iterations TEST_ITERATIONS
+  --train
+  --alternating
+  --losses LOSSES [LOSSES ...]
+```
+
+Fine tuning was performed on an NVIDIA P100 16GB while the SNARE inference also was able to run on NVIDIA GTX 1060 6GB.
+
+==================================================================================================================
+below is the original README from the upstream repository.
+==================================================================================================================
+
+
+
 # Densecap in Pytorch
 
 A simplified pytorch version of [jcjohnson/densecap](https://github.com/jcjohnson/densecap)

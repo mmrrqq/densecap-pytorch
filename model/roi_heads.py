@@ -14,17 +14,12 @@ MULTIVIEW_LOSS_FACTOR = 0.1
 
 
 class Loss(Enum):
+    """Enum for the implemented fine tuning losses"""
     VIEW = 0
     MULTIVIEW = 1
     VIEW_CONTRASTIVE = 2
     MIN_CAP = 3
     MULTIVIEW_CAP = 4
-
-
-def predict_view_loss(view_predicts, gt_views):
-    view_loss = F.cross_entropy(view_predicts, gt_views)
-
-    return view_loss
 
 
 def detect_loss(class_logits, box_regression, labels, regression_targets):
@@ -65,12 +60,10 @@ def detect_loss(class_logits, box_regression, labels, regression_targets):
 
 def query_caption_loss(caption_predicts, caption_gt) -> torch.Tensor:
     """
-    Computes the loss for caption part.
+    Compute the cross entropy loss given the token predictions and the gt caption tokens.    
     Arguments:
         caption_predicts (Tensor)
         caption_gt (Tensor or list[Tensor])
-        caption_length (Tensor or list[Tensor])
-        caption_loss (Tensor)
     """
 
     caption_gt = caption_gt[:, 1:]
@@ -113,11 +106,12 @@ def caption_loss(caption_predicts, caption_gt, caption_length):
 
 
 class DenseCapRoIHeads(nn.Module):
+    """Head network using the proposed regions extract features, generate captions and estimate views."""
     def __init__(
         self,
         box_describer,
-        view_head,
-        view_predictor_head,
+        region_view_head,
+        caption_view_predictor,
         box_roi_pool,
         box_head,
         box_predictor,
@@ -157,13 +151,15 @@ class DenseCapRoIHeads(nn.Module):
         self.box_predictor = box_predictor
         self.box_describer = box_describer
 
-        self.view_head = view_head
-        self.view_predictor_head = view_predictor_head
+        self.region_view_head = region_view_head
+        # TODO: in a future version, the caption view predictor must not be included to the ROI head.
+        self.caption_view_predictor = caption_view_predictor
 
         self.score_thresh = score_thresh
         self.nms_thresh = nms_thresh
         self.detections_per_img = detections_per_img
 
+        # this defines the losses to be fine tuned
         self.losses = [
             Loss.VIEW
             if l == "view"
@@ -182,9 +178,10 @@ class DenseCapRoIHeads(nn.Module):
         if None in self.losses:
             raise Exception("invalid loss name argument")
 
-        self.decode_query_caption = False
+        self.decode_query_caption = True
 
     def assign_targets_to_proposals(self, proposals, gt_boxes, gt_labels):
+        """Match target annotated regions and descriptions to region proposals. Used for VG training."""
         matched_idxs = []
         labels = []
         for proposals_in_image, gt_boxes_in_image, gt_labels_in_image in zip(
@@ -241,7 +238,7 @@ class DenseCapRoIHeads(nn.Module):
         return sampled_inds
 
     def select_training_samples(self, proposals, targets):
-        """
+        """Sample a fixed proportion of positive to negative proposals. Used for VG training.
         proposals: (List[Tensor[N, 4]])
         targets (List[Dict])
         """
@@ -315,6 +312,7 @@ class DenseCapRoIHeads(nn.Module):
         view_predicts,
         return_features,
     ):
+        """Filter detected regions."""
         device = logits.device
         num_classes = logits.shape[-1]
 
@@ -413,7 +411,7 @@ class DenseCapRoIHeads(nn.Module):
         return all_boxes, all_scores, all_captions, all_box_features, all_view_predicts
 
     def forward(self, features, proposals, image_shapes, targets=None):
-        """
+        """Forward call for dense captioning. 
         Arguments:
             features (List[Tensor])
             proposals (List[Tensor[N, 4]])
@@ -477,12 +475,12 @@ class DenseCapRoIHeads(nn.Module):
             box_features = torch.cat(box_features_gt, 0)
             gt_views = torch.cat(gt_views, 0)
 
-        view_predicts = self.view_head(box_features)
+        view_predicts = self.region_view_head(box_features)
         caption_predicts = self.box_describer(box_features, caption_gt, caption_length)
 
         result, losses = [], {}
         if self.training:
-            loss_view_predictor = predict_view_loss(view_predicts, gt_views)
+            loss_view_predictor = F.cross_entropy(view_predicts, gt_views)
             loss_classifier, loss_box_reg = detect_loss(
                 logits, box_regression, labels, regression_targets
             )
@@ -535,6 +533,8 @@ class DenseCapRoIHeads(nn.Module):
         boxes_per_image,
         target_view,
     ):
+        """
+        Gather fine tuning losses. Output depends on the losses set to fine tune in :self.losses."""
         loss_caption = query_caption_loss(caption_predicts, target_embeddings)
 
         box_mean_caption_loss = loss_caption.mean(dim=1)
@@ -568,7 +568,7 @@ class DenseCapRoIHeads(nn.Module):
             _, (h, _) = self.box_describer.rnn(word_embeddings)
 
         sentence_embedding = h[0]
-        view_caption_prediction = self.view_predictor_head(sentence_embedding)
+        view_caption_prediction = self.caption_view_predictor(sentence_embedding)
         min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
 
         if self.training:
@@ -588,7 +588,7 @@ class DenseCapRoIHeads(nn.Module):
             )
         # END SENTENCE EMBEDDING
 
-        view_predicts = self.view_head(box_features[min_loss_index_per_view])
+        view_predicts = self.region_view_head(box_features[min_loss_index_per_view])
         gt_views = [
             v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
         ]
@@ -681,7 +681,9 @@ class DenseCapRoIHeads(nn.Module):
 
         return total_loss, loss_dict, min_loss_index, min_loss_index_per_view
 
-    def view_predict_query(self, target_query, batch_size=1):
+    def view_predict_query(self, target_query, batch_size=1) -> int:
+        """Predict the best vantage point given the target query.
+        """
         target_embeddings = target_query.expand(batch_size, -1)
 
         target_query = target_embeddings[0].unsqueeze(dim=0)
@@ -691,25 +693,17 @@ class DenseCapRoIHeads(nn.Module):
             _, (h, _) = self.box_describer.rnn(word_embeddings)
 
         sentence_embedding = h[0]
-        view_caption_prediction = self.view_predictor_head(sentence_embedding)
+        view_caption_prediction = self.caption_view_predictor(sentence_embedding)
         _, view_caption_predicts = F.softmax(view_caption_prediction, dim=1).max(dim=1)
 
         return view_caption_predicts
 
-    def view_predict(self, features, proposals, image_shapes, target_query):
-        box_features = self.box_roi_pool(features, proposals, image_shapes)
-        box_features = self.box_head(box_features)
-
-        view_predicts = self.view_head(box_features)
-        _, view_predicts = F.softmax(view_predicts, dim=1).max(dim=1)
-        batch_size, _ = box_features.shape
-        view_caption_prediction = self.view_predict_query(target_query, batch_size)
-
-        return view_predicts, view_caption_prediction
 
     def forward_query(
         self, features, proposals, image_shapes, target_query, target_view
     ):
+        """Forward using the target query for language reference resolution.
+        """
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
 
