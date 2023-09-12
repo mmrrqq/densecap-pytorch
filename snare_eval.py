@@ -30,6 +30,7 @@ def get_args():
     parser.add_argument("--params-path", default="model_params")
     parser.add_argument("--model-name")
     parser.add_argument("--test-view", action="store_true", default=False)
+    parser.add_argument("--test-categories", action="store_true", default=False)
     parser.add_argument("--test-iterations", default=10)
     parser.add_argument("--train", action="store_true", default=False)
     parser.add_argument("--alternating", action="store_true", default=False)
@@ -183,23 +184,16 @@ def fine_tune(
 
 
 def test_model_categories(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
-    """Calculate accuracy metrics for the given model on the SNARE benchmark per validation fold.
+    """Calculate accuracy metrics for the given model on the SNARE benchmark per ShapeNet object category.
 
     Returns: Dictionary containing accuracies calculated using different metrics. Indexed by metric name.
     """
     model.eval()
     view_ids = torch.arange(8)
 
-    n = 0
-    min_pos = 0    
-    mean_pos = 0    
-    min_per_view_mean_pos = 0
-    view_pred_correct = 0
-    view_pred_total = 0
-    cap_view_pred_correct = 0
-
-    cap_view_dict = { i.item(): 0 for i in view_ids }    
-    min_cap_view_dict = { i.item(): 0 for i in view_ids }
+    n = 0    
+    category_dict = build_category_dict(metadata_path="./data/shapenet_sem_metadata.csv")
+    category_accuracy_dict = {}
 
     with torch.no_grad():
         for batch in tqdm(data_loader):
@@ -224,42 +218,35 @@ def test_model_categories(model: DenseCapModel, data_loader: DataLoader) -> Dict
             
             # collect correct assignments
             n += 1
-            if losses2["cap_min"] > losses1["cap_min"]:
-                min_pos += 1
 
-            if losses2["cap_mean"] > losses1["cap_mean"]:
-                mean_pos += 1            
+            cat_identifiers = category_dict[key1[0]]
+            for cat in cat_identifiers:
+                if not category_accuracy_dict.get(cat):
+                    category_accuracy_dict[cat] = {
+                        "n": 0,
+                        "cap_min": 0,
+                        "cap_mean": 0,
+                        "cap_min_per_view_mean": 0
+                    }
+                category_accuracy_dict[cat]["n"] += 1
 
-            if losses2["cap_min_per_view_mean"] > losses1["cap_min_per_view_mean"]:
-                min_per_view_mean_pos += 1            
+                if losses2["cap_min"] > losses1["cap_min"]:
+                    category_accuracy_dict[cat]["cap_min"] += 1
 
-            view_preds = losses1["view_preds"].cpu()
-            view_pred_total += len(view_preds)
-            view_pred_correct += (view_preds == view_ids).sum()
-            print(view_pred_correct)     
-            print(view_pred_correct / view_pred_total)       
-            cap_view_pred_correct += (losses1["cap_min_view"] == losses1["view_cap_preds"]).sum()
-            cap_view_dict[losses1["view_cap_preds"].item()] += 1
-            min_cap_view_dict[losses1["cap_min_view"].item()] += 1
+                if losses2["cap_mean"] > losses1["cap_mean"]:
+                    category_accuracy_dict[cat]["cap_mean"] += 1
 
-    mean_acc = mean_pos / n    
-    min_acc = min_pos / n
-    min_per_view_mean_acc = min_per_view_mean_pos / n    
-    view_pred_acc = view_pred_correct / view_pred_total
-    cap_view_pred_acc = cap_view_pred_correct / n
+                if losses2["cap_min_per_view_mean"] > losses1["cap_min_per_view_mean"]:
+                    category_accuracy_dict[cat]["cap_min_per_view_mean"] += 1
 
-    print(
-        f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nview pred:\t{view_pred_acc}\ncap view pred:\t{cap_view_pred_acc}"
-    )
-    print(cap_view_dict)
-    print(min_cap_view_dict)
-    return {
-        "min_acc": min_acc,
-        "mean_acc": mean_acc,
-        "min_per_view_mean_acc": min_per_view_mean_acc,
-        "view_pred_acc": view_pred_acc,
-        "cap_view_pred_acc": cap_view_pred_acc
-    }
+    for cat, cat_dict in category_accuracy_dict.items():
+        for metric_name, value in list(cat_dict.items()):
+            if metric_name == "n":
+                continue
+            
+            cat_dict[metric_name] = value / cat_dict["n"]
+
+    print(category_accuracy_dict)    
 
 
 def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
@@ -370,7 +357,7 @@ def build_category_dict(metadata_path: str = "./data/shapenet_sem_metadata.csv")
     """Construct a dictionary indexing the object categories by the shapenet model id."""    
     identifier_dict = {}    
 
-    with open("./data/semnet_metadata.csv") as f:
+    with open(metadata_path) as f:
         csv_reader = csv.reader(f, delimiter=',')
         
         for row in csv_reader:
@@ -542,7 +529,9 @@ def eval_model(args):
 
     if args.test_view:
         test_view_prediction(model, test_loader, iterations=args.test_iterations)
-    else:        
+    elif args.test_categories:
+        test_model_categories(model, test_loader)
+    else:
         acc_dict = test(model, test_loader)
         print(acc_dict)
         print(",".join([str((v.item() if torch.is_tensor(v) else v)) for v in acc_dict.values()]))
