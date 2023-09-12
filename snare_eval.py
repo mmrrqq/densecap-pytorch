@@ -1,4 +1,5 @@
 import argparse
+import csv
 from pathlib import Path
 import pickle
 import time
@@ -181,6 +182,86 @@ def fine_tune(
     return iter_count
 
 
+def test_model_categories(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
+    """Calculate accuracy metrics for the given model on the SNARE benchmark per validation fold.
+
+    Returns: Dictionary containing accuracies calculated using different metrics. Indexed by metric name.
+    """
+    model.eval()
+    view_ids = torch.arange(8)
+
+    n = 0
+    min_pos = 0    
+    mean_pos = 0    
+    min_per_view_mean_pos = 0
+    view_pred_correct = 0
+    view_pred_total = 0
+    cap_view_pred_correct = 0
+
+    cap_view_dict = { i.item(): 0 for i in view_ids }    
+    min_cap_view_dict = { i.item(): 0 for i in view_ids }
+
+    with torch.no_grad():
+        for batch in tqdm(data_loader):
+            (key1_imgs, key2_imgs), gt_idx, (key1, key2), annotation, is_visual = batch
+
+            if not is_visual or gt_idx < 0:
+                continue
+
+            annotation = annotation[0]
+
+            # swap images if key2 is referenced
+            if gt_idx > 0:
+                key1_imgs, key2_imgs = key2_imgs, key1_imgs
+
+            key1_imgs = [k.squeeze().to(device) for k in key1_imgs]
+            _, losses1, _ = model.query_caption(key1_imgs, [annotation], view_ids)
+
+            del key1_imgs
+
+            key2_imgs = [k.squeeze().to(device) for k in key2_imgs]
+            _, losses2, _ = model.query_caption(key2_imgs, [annotation], view_ids)
+            
+            # collect correct assignments
+            n += 1
+            if losses2["cap_min"] > losses1["cap_min"]:
+                min_pos += 1
+
+            if losses2["cap_mean"] > losses1["cap_mean"]:
+                mean_pos += 1            
+
+            if losses2["cap_min_per_view_mean"] > losses1["cap_min_per_view_mean"]:
+                min_per_view_mean_pos += 1            
+
+            view_preds = losses1["view_preds"].cpu()
+            view_pred_total += len(view_preds)
+            view_pred_correct += (view_preds == view_ids).sum()
+            print(view_pred_correct)     
+            print(view_pred_correct / view_pred_total)       
+            cap_view_pred_correct += (losses1["cap_min_view"] == losses1["view_cap_preds"]).sum()
+            cap_view_dict[losses1["view_cap_preds"].item()] += 1
+            min_cap_view_dict[losses1["cap_min_view"].item()] += 1
+
+    mean_acc = mean_pos / n    
+    min_acc = min_pos / n
+    min_per_view_mean_acc = min_per_view_mean_pos / n    
+    view_pred_acc = view_pred_correct / view_pred_total
+    cap_view_pred_acc = cap_view_pred_correct / n
+
+    print(
+        f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nview pred:\t{view_pred_acc}\ncap view pred:\t{cap_view_pred_acc}"
+    )
+    print(cap_view_dict)
+    print(min_cap_view_dict)
+    return {
+        "min_acc": min_acc,
+        "mean_acc": mean_acc,
+        "min_per_view_mean_acc": min_per_view_mean_acc,
+        "view_pred_acc": view_pred_acc,
+        "cap_view_pred_acc": cap_view_pred_acc
+    }
+
+
 def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
     """Calculate accuracy metrics for the given model on the SNARE benchmark validation fold.
 
@@ -283,6 +364,23 @@ def print_decode_caption(cap: torch.Tensor, idx_to_token):
         print(idx_to_token[i.item()], end=" ")
     
     print("\n")
+
+
+def build_category_dict(metadata_path: str = "./data/shapenet_sem_metadata.csv"):
+    """Construct a dictionary indexing the object categories by the shapenet model id."""    
+    identifier_dict = {}    
+
+    with open("./data/semnet_metadata.csv") as f:
+        csv_reader = csv.reader(f, delimiter=',')
+        
+        for row in csv_reader:
+            identifier, category, *_ = row        
+            categories = category.split(",")        
+
+            filtered_categories = [cat for cat in categories if not "_" in cat]
+            identifier_dict[identifier] = filtered_categories
+
+    return identifier_dict
 
 
 def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iterations=10):
