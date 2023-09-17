@@ -6,7 +6,7 @@ import time
 from typing import Dict, Optional
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 from utils.model_io import load_model, save_model
@@ -79,7 +79,7 @@ def fine_tune(
                     if para.requires_grad
                     and "box_describer" not in name
                     and "region_view_head" not in name
-                    and "view_predictor_head" not in name
+                    and "caption_view_predictor" not in name
                 ),
                 "name": "base",
             },
@@ -104,7 +104,7 @@ def fine_tune(
             {
                 "params": (
                     para
-                    for para in model.roi_heads.view_predictor_head.parameters()
+                    for para in model.roi_heads.caption_view_predictor.parameters()
                     if para.requires_grad
                 ) if not args.alternating else (),
                 "lr": REGION_VIEW_HEAD_LR,
@@ -121,7 +121,7 @@ def fine_tune(
                 "params": (
                     para
                     for name, para in model.named_parameters()
-                    if para.requires_grad and "view_predictor_head" in name
+                    if para.requires_grad and "caption_view_predictor" in name
                 )
             }
         ],
@@ -227,14 +227,14 @@ def test_model_categories(model: DenseCapModel, data_loader: DataLoader) -> Dict
                 if not category_accuracy_dict.get(cat):
                     category_accuracy_dict[cat] = {
                         "n": 0,
-                        "dcs": 0,
+                        "cap_min": 0,
                         "cap_mean": 0,
                         "cap_min_per_view_mean": 0
                     }
                 category_accuracy_dict[cat]["n"] += 1
 
                 if losses2["dcs"] > losses1["dcs"]:
-                    category_accuracy_dict[cat]["dcs"] += 1
+                    category_accuracy_dict[cat]["cap_min"] += 1
 
                 if losses2["cap_mean"] > losses1["cap_mean"]:
                     category_accuracy_dict[cat]["cap_mean"] += 1
@@ -305,9 +305,7 @@ def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
 
             view_preds = losses1["view_preds"].cpu()
             view_pred_total += len(view_preds)
-            view_pred_correct += (view_preds == view_ids).sum()
-            print(view_pred_correct)     
-            print(view_pred_correct / view_pred_total)       
+            view_pred_correct += (view_preds == view_ids).sum()            
             cap_view_pred_correct += (losses1["cap_min_view"] == losses1["view_cap_preds"]).sum()
             cap_view_dict[losses1["view_cap_preds"].item()] += 1
             min_cap_view_dict[losses1["cap_min_view"].item()] += 1
@@ -321,8 +319,8 @@ def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
     print(
         f"test end.\nmin:\t{min_acc:.2f}\nmean:\t{mean_acc:.2f}\nmin per view mean:\t{min_per_view_mean_acc}\nview pred:\t{view_pred_acc}\ncap view pred:\t{cap_view_pred_acc}"
     )
-    print(cap_view_dict)
-    print(min_cap_view_dict)
+    print(f"predicted best vantage point distribution: {cap_view_dict}")
+    print(f"actual best vantage point distribution: {min_cap_view_dict}")
     return {
         "min_acc": min_acc,
         "mean_acc": mean_acc,
@@ -395,9 +393,7 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
                 if not is_visual or gt_idx < 0:
                     continue
 
-                annotation = annotation[0]
-                if not ("back" in annotation.lower().split(" ")):
-                    continue
+                annotation = annotation[0]                
 
                 if gt_idx > 0:
                     key1, key2 = key2, key1
@@ -418,17 +414,7 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
                     pred_pos += 1
 
                 if random_losses2["dcs"] > random_losses1["dcs"]:
-                    random_pos += 1
-
-                best_view_pred1 = best_view_losses1['view_preds'].cpu().item()
-                best_view_pred2 = best_view_losses2['view_preds'].cpu().item()
-                random_view_pred1 = random_losses1['view_preds'].cpu().item()
-                random_view_pred2 = random_losses2['view_preds'].cpu().item()
-                # if rnd_view_id1 == random_view_pred1 and best_view_pred1 == best_view_id and not random_losses2["dcs"] > random_losses1["dcs"] and best_view_losses2["dcs"] > best_view_losses1["dcs"]:
-                print(f"{annotation} view: {rnd_view_id1} (pred: {random_view_pred1}) best view: {best_view_id} (pred {best_view_pred1}); id: {key1} ")                    
-                print(f"distractor id: {key2}")
-                print_decode_caption(rnd_view_caption1, model.idx_to_token)
-                print_decode_caption(best_view_caption1, model.idx_to_token)                    
+                    random_pos += 1                
 
                 if i % 100 == 0:
                     pred_acc = pred_pos / n
@@ -464,8 +450,9 @@ def fine_tune_loop(args):
     idx_to_token = look_up_tables["idx_to_token"]
 
     params_path = Path(args.params_path)    
+    config_path = Path(args.config_path)
     model = load_model(
-        params_path / args.model_name / "config.json",
+        config_path / "config.json",
         params_path / (args.model_name + ".pth.tar"),
         return_features=False,
         losses=args.losses,
@@ -476,8 +463,12 @@ def fine_tune_loop(args):
 
     model.toDevice(device)
     test_set = SnareDataset(args.snare_annotations_path, args.snare_screenshots_path, mode="valid", filter_visual=True)
-
+    smoller = list(range(0, 15))
+    test_set = Subset(test_set, smoller)
+    
     train_set = SnareDataset(args.snare_annotations_path, args.snare_screenshots_path, mode="train", filter_visual=True)
+    smol = list(range(0, 20))
+    train_set = Subset(train_set, smol)
     test_loader = DataLoader(test_set, batch_size=1)
 
     writer = SummaryWriter()
@@ -504,6 +495,8 @@ def fine_tune_loop(args):
 
 
 def eval_model(args):
+    """Evaluate the model depending on the specified arguments in :args.
+    """
     with open(args.lookup_tables_path, "rb") as f:
         look_up_tables = pickle.load(f)
     
@@ -511,8 +504,9 @@ def eval_model(args):
     idx_to_token = look_up_tables["idx_to_token"]
 
     params_path = Path(args.params_path)        
+    config_path = Path(args.config_path)
     model = load_model(
-        params_path / "config.json",
+        config_path / "config.json",
         params_path / (args.model_name + ".pth.tar"),
         return_features=False,
         losses=args.losses,
@@ -524,6 +518,8 @@ def eval_model(args):
     model.toDevice(device)
 
     test_set = SnareDataset(args.snare_annotations_path, args.snare_screenshots_path, mode="valid", filter_visual=True)
+    smoller = list(range(0, 15))
+    test_set = Subset(test_set, smoller)
     test_loader = DataLoader(test_set, batch_size=1)    
 
     if args.test_view:
