@@ -9,9 +9,13 @@ For the SNARE evaluation, the fold information and model screenshots are needed.
 The training and validation folds are defined in [this link](https://github.com/snaredataset/snare) repository which per default should be cloned in the parent directory to '../'. The ShapeNetSem screenshot data can be retrieved from [this link](https://shapenet.cs.stanford.edu/shapenet/obj-zip/ShapeNetSem.v0/models-screenshots.zip) and by default should be extracted to `../snare/data/`.
 If your configuration varies, just set the `--snare-annotations-path` and `snare-screenshots-path` arguments respectively.
 
-## Pre training
-Please see the original README below for training on Visual Genome. We provide a pre trained version here (WO LINK?)
-The pre-trained version includes a model checkpoint `<name>.pth.tar`, a `config.json` and the preprocessed data, containing the token dictionaries in `VG-regions-dicts-lite.pkl` which we will use for finetuning.
+## Pre-training
+We provide a pre trained version here 
+
+The pre-trained version includes a model checkpoint `<name>.pth.tar`, a `config.json` and the preprocessed data, containing the token dictionaries in `VG-regions-dicts-lite.pkl` which we will use for finetuning. Please extract the files and place `VG-regions-dicts-lite.pkl` in `./data/` and model checkpoint and config to `./model_params/`.
+
+If you want to perform pre-training for yourself, please consult the sections *Pre-process* and *Start Training* of the original README below to pre-process the visual genome data for pre-training.
+
 ## Fine tuning on SNARE
 Fine tuning is started using the `snare_eval.py` script by providing the `--train` argument flag. The following arguments are relevant for fine tuning:
 
@@ -48,12 +52,13 @@ When ommitting the `--train` flag, the SNARE reference resolution task is evalua
                       Iterations to test when '--test-view' is specified. (default: 10)
 --test-view           Test random vs. predicted vantage point performance. (default: False)
 ```
+
 ### Hardware
 Fine tuning was performed on an NVIDIA P100 16GB while the SNARE inference also was able to run on NVIDIA GTX 1060 6GB.
 
 ---
 
-## below is the original README from the upstream repository.
+### below is the original README from the upstream repository.
 
 ---
 
@@ -87,7 +92,7 @@ A simplified pytorch version of [jcjohnson/densecap](https://github.com/jcjohnso
 
 > **Note**: We use nlgeval to calculate Meteor, you can modify evaluate.py to use other methods like coco-eval.
 
-## Pre-preprocess
+## Pre-process
 
 1. `mkdir ./data` and place [Visual Genome Dataset](http://visualgenome.org/) in a sub directory `visual-genome`
     * Images are in two directories `./data/visual-genome/VG_100K` and `./data/visual-genome/VG_100K_2`
