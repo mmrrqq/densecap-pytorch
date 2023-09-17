@@ -73,6 +73,9 @@ When ommitting the `--train` flag, the SNARE reference resolution task is evalua
 --test-view           Test random vs. predicted vantage point performance. (default: False)
 ```
 
+For example, the fine-tuned model named `CVP-DCS` can be evaluated on the SNARE validation fold using 
+`python snare_eval.py --model-name CVP-DCS`.
+
 ### Hardware
 Fine tuning was performed on an NVIDIA P100 16GB while the SNARE inference also was able to run on NVIDIA GTX 1060 6GB.
 
