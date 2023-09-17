@@ -13,18 +13,22 @@ Below is a list of model trained parameters that can be downloaded and used for 
 
 | Model Name (as written in the Thesis)  |
 | -------- |
-| [baseline]() |
-| [CVP+DCS]() |
-| [CVP+DCS+V]() |
-| [CVP+DCS+MV]() |
-| [CVP+DCS+VC]() |
-| [CVP+DCS+MV_DCS]() |
-| [CVP+DCS+V+MV_DCS]() |
-| [CVP+DCS+V+MV]() |
-| [CVP+DCS+VC+MV_DCS]() |
+| [baseline](https://uni-bielefeld.sciebo.de/s/FZUPbkWW8Ohz4nI) |
+| [CVP+DCS](https://uni-bielefeld.sciebo.de/s/mxmLbaSQNp2abDs) |
+| [CVP+DCS+MV_DCS](https://uni-bielefeld.sciebo.de/s/mp3bv3wAywhIdX3) |
+| [CVP+DCS+MV](https://uni-bielefeld.sciebo.de/s/NjKYL4G0RjsgYT4) |
+| [CVP+DCS+V](https://uni-bielefeld.sciebo.de/s/NETzThInMuUIuJL) |
+| [CVP+DCS+V+MV_DCS](https://uni-bielefeld.sciebo.de/s/IEgs4HHKH9Qqlnc) |
+| [CVP+DCS+V+MV](https://uni-bielefeld.sciebo.de/s/McGsrRgqiftDBVY) |
+| [CVP+DCS+VC](https://uni-bielefeld.sciebo.de/s/hMK4rGtV7oDuRE6) |
+| [CVP+DCS+VC+MV_DCS](https://uni-bielefeld.sciebo.de/s/oNyeNE2ovGdwbNt) |
+
+By default, the model params files (`<name>.pth.tar`) need to be placed in the `./model_params` folder. If you want to place them elsewhere, you need to specify `--params-path` when running the scripts.
+Additionally, the models require a `config.json` file which is available [here](https://uni-bielefeld.sciebo.de/s/N8TSi7OcoKf1Nd7). Please place this file in your `model_params` directory (or specify a different path using `--config-path`).
+Finally, the pre-processing file containing tokenization dictionaries available [here](https://uni-bielefeld.sciebo.de/s/WLz83hR6U2iuwuN) needs to be placed in `./data` (or otherwise specified by `--lookup-tables-path`). For other tokenization settings, please refer to the *Pre-process* and *Start Training* sections in the original README below.
 
 ## Pre-training
-The pre-trained version listed above includes a model checkpoint `<name>.pth.tar`, a `config.json` and the preprocessed data, containing the token dictionaries in `VG-regions-dicts-lite.pkl` which we will use for finetuning. Please extract the files and place `VG-regions-dicts-lite.pkl` in `./data/` and model checkpoint and config to `./model_params/`.
+We provide a pre-trained version of our model on Visual Genome which we refer to as `baseline` in the list above.
 
 If you want to perform pre-training for yourself, please consult the sections *Pre-process* and *Start Training* of the original README below to pre-process the visual genome data for pre-training.
 
@@ -54,6 +58,9 @@ Fine tuning is started using the `snare_eval.py` script by providing the `--trai
                         Path to the SNARE/ShapeNetSem model screenshots. (default: ../snare/data/screenshots)  
   --train               Train/Finetune the model on the SNARE training dataset (default: False)
 ```
+
+For example, a model fine tuning the baseline model named `baseline` and optimizing the CVP, DCS and V loss for four epochs can be trained using:
+`python snare_eval.py --model_name baseline --train --losses cvp dcs v --epochs 4`
 
 ## Evaluation on SNARE
 When ommitting the `--train` flag, the SNARE reference resolution task is evaluated on the validation set per default. In addition to the arguments listed above, other evaluation metrics can be started using the arguments listed below.

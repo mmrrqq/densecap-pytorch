@@ -22,6 +22,7 @@ class Loss(Enum):
     MV_DCS -> Multi-View Distant Caption Supervision.
     CVP -> Caption View Prediction.
     """
+
     V = 0
     MV = 1
     VC = 2
@@ -68,7 +69,7 @@ def detect_loss(class_logits, box_regression, labels, regression_targets):
 
 def query_caption_loss(caption_predicts, caption_gt) -> torch.Tensor:
     """
-    Compute the cross entropy loss given the token predictions and the gt caption tokens.    
+    Compute the cross entropy loss given the token predictions and the gt caption tokens.
     Arguments:
         caption_predicts (Tensor)
         caption_gt (Tensor or list[Tensor])
@@ -115,6 +116,7 @@ def caption_loss(caption_predicts, caption_gt, caption_length):
 
 class DenseCapRoIHeads(nn.Module):
     """Head network using the proposed regions extract features, generate captions and estimate views."""
+
     def __init__(
         self,
         box_describer,
@@ -421,7 +423,7 @@ class DenseCapRoIHeads(nn.Module):
         return all_boxes, all_scores, all_captions, all_box_features, all_view_predicts
 
     def forward(self, features, proposals, image_shapes, targets=None):
-        """Forward call for dense captioning. 
+        """Forward call for dense captioning.
         Arguments:
             features (List[Tensor])
             proposals (List[Tensor[N, 4]])
@@ -580,7 +582,7 @@ class DenseCapRoIHeads(nn.Module):
 
         sentence_embedding = h[0]
         view_caption_prediction = self.caption_view_predictor(sentence_embedding)
-        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()        
+        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
 
         view_predicts = self.region_view_head(box_features[min_loss_index_per_view])
         gt_views = [
@@ -607,7 +609,7 @@ class DenseCapRoIHeads(nn.Module):
             loss_dict["mean_loss_view_id"] = min_mean_loss_view_id
 
             return None, loss_dict, min_loss_index, min_loss_index_per_view
-        
+
         if Loss.CVP in self.losses:
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
             # TODO: alternatively, create distribution once and roll array.
@@ -629,9 +631,7 @@ class DenseCapRoIHeads(nn.Module):
 
         # TODO: changed from sum to mean, prob. need to retrain..
         if Loss.MV_DCS in self.losses:
-            loss_dict["mv_dcs"] = box_mean_caption_loss[
-                min_loss_index_per_view
-            ].mean()
+            loss_dict["mv_dcs"] = box_mean_caption_loss[min_loss_index_per_view].mean()
 
         if Loss.V in self.losses:
             log_view_prediction = F.log_softmax(view_predicts, dim=1)
@@ -692,8 +692,7 @@ class DenseCapRoIHeads(nn.Module):
         return total_loss, loss_dict, min_loss_index, min_loss_index_per_view
 
     def view_predict_query(self, target_query, batch_size=1) -> int:
-        """Predict the best vantage point given the target query.
-        """
+        """Predict the best vantage point given the target query."""
         target_embeddings = target_query.expand(batch_size, -1)
 
         target_query = target_embeddings[0].unsqueeze(dim=0)
@@ -708,12 +707,10 @@ class DenseCapRoIHeads(nn.Module):
 
         return view_caption_predicts
 
-
     def forward_query(
         self, features, proposals, image_shapes, target_query, target_view
     ):
-        """Forward using the target query for language reference resolution.
-        """
+        """Forward using the target query for language reference resolution."""
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
 

@@ -33,15 +33,21 @@ def load_model(
     )
 
     checkpoint = torch.load(checkpoint_path)
-    model_dict = checkpoint['model']
+    model_dict = checkpoint["model"]
     # adjust to previous model layer names
     for k in list(model_dict.keys()):
         if "roi_heads.view_head" in k:
-            model_dict[k.replace("roi_heads.view_head", "roi_heads.region_view_head")] = model_dict.pop(k)
+            model_dict[
+                k.replace("roi_heads.view_head", "roi_heads.region_view_head")
+            ] = model_dict.pop(k)
         if "roi_heads.view_predictor_head" in k:
-            model_dict[k.replace("roi_heads.view_predictor_head", "roi_heads.caption_view_predictor")] = model_dict.pop(k)
-                
-    model.load_state_dict(checkpoint["model"], strict=True)
+            model_dict[
+                k.replace(
+                    "roi_heads.view_predictor_head", "roi_heads.caption_view_predictor"
+                )
+            ] = model_dict.pop(k)
+
+    model.load_state_dict(checkpoint["model"], strict=False)
 
     if verbose and "results_on_val" in checkpoint.keys():
         print("[INFO]: checkpoint {} loaded".format(checkpoint_path))
