@@ -62,6 +62,7 @@ Fine tuning is started using the `snare_eval.py` script by providing the `--trai
 
 For example, a model fine tuning the baseline model named `baseline` and optimizing the CVP, DCS and V loss for four epochs can be trained using:
 `python snare_eval.py --model_name baseline --train --losses cvp dcs v --epochs 4`
+The learning rates as well as the optimizers can be adjusted in the `snare_eval.py` file.
 
 ## Evaluation on SNARE
 When ommitting the `--train` flag, the SNARE reference resolution task is evaluated on the validation set per default. In addition to the arguments listed above, other evaluation metrics can be started using the arguments listed below.
