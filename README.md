@@ -4,15 +4,27 @@
 We use python 3.8 for our experiments, other version may work.
 1. If you like, create a python environment and activate it, for example using conda: `conda create -n dnscp python=3.8 && conda activate dnscp`
 2. Install the dependencies using pip and the provided requirements file by running: `pip install -r requirements.txt`
-### Data
+## Data
 For the SNARE evaluation, the fold information and model screenshots are needed.
 The training and validation folds are defined in [this link](https://github.com/snaredataset/snare) repository which per default should be cloned in the parent directory to '../'. The ShapeNetSem screenshot data can be retrieved from [this link](https://shapenet.cs.stanford.edu/shapenet/obj-zip/ShapeNetSem.v0/models-screenshots.zip) and by default should be extracted to `../snare/data/`.
 If your configuration varies, just set the `--snare-annotations-path` and `snare-screenshots-path` arguments respectively.
 
-## Pre-training
-We provide a pre trained version here 
+Below is a list of model trained parameters that can be downloaded and used for further training or evaluation. Please see the corresponding sections for details how to use them.
 
-The pre-trained version includes a model checkpoint `<name>.pth.tar`, a `config.json` and the preprocessed data, containing the token dictionaries in `VG-regions-dicts-lite.pkl` which we will use for finetuning. Please extract the files and place `VG-regions-dicts-lite.pkl` in `./data/` and model checkpoint and config to `./model_params/`.
+| Model Name (as written in the Thesis)  |
+| -------- |
+| [baseline]() |
+| [CVP+DCS]() |
+| [CVP+DCS+V]() |
+| [CVP+DCS+MV]() |
+| [CVP+DCS+VC]() |
+| [CVP+DCS+MV_DCS]() |
+| [CVP+DCS+V+MV_DCS]() |
+| [CVP+DCS+V+MV]() |
+| [CVP+DCS+VC+MV_DCS]() |
+
+## Pre-training
+The pre-trained version listed above includes a model checkpoint `<name>.pth.tar`, a `config.json` and the preprocessed data, containing the token dictionaries in `VG-regions-dicts-lite.pkl` which we will use for finetuning. Please extract the files and place `VG-regions-dicts-lite.pkl` in `./data/` and model checkpoint and config to `./model_params/`.
 
 If you want to perform pre-training for yourself, please consult the sections *Pre-process* and *Start Training* of the original README below to pre-process the visual genome data for pre-training.
 
@@ -44,7 +56,7 @@ Fine tuning is started using the `snare_eval.py` script by providing the `--trai
 ```
 
 ## Evaluation on SNARE
-When ommitting the `--train` flag, the SNARE reference resolution task is evaluated on the validation set per default. In addition to the arguments listed above, other evaluation metrics can be started using the arguments listed below:
+When ommitting the `--train` flag, the SNARE reference resolution task is evaluated on the validation set per default. In addition to the arguments listed above, other evaluation metrics can be started using the arguments listed below.
 
 ```
 --test-categories     Compare the models performance on SNARE object categories. (default: False)
