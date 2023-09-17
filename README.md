@@ -48,6 +48,7 @@ Fine tuning is started using the `snare_eval.py` script by providing the `--trai
                         Specify the losses to be included for training. Default value contains all possible losses.
                         (default: ['v', 'mv', 'vc', 'dcs', 'mv_dcs', 'cvp'])
   --model-name MODEL_NAME
+                        Name of the model checkpoint file (excluding '.pth.tar') (default: None)
   --model-prefix MODEL_PREFIX
                         Prefix used for model checkpoint saves. Defaults to current timestamp. (default: 1694945456)
   --params-path PARAMS_PATH
