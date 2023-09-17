@@ -51,11 +51,11 @@ When ommitting the `--train` flag, the SNARE reference resolution task is evalua
 ### Hardware
 Fine tuning was performed on an NVIDIA P100 16GB while the SNARE inference also was able to run on NVIDIA GTX 1060 6GB.
 
+---
 
-==========================================================
-below is the original README from the upstream repository.
-==========================================================
+## below is the original README from the upstream repository.
 
+---
 
 # Densecap in Pytorch
 
