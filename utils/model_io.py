@@ -40,8 +40,7 @@ def load_model(
             model_dict[k.replace("roi_heads.view_head", "roi_heads.region_view_head")] = model_dict.pop(k)
         if "roi_heads.view_predictor_head" in k:
             model_dict[k.replace("roi_heads.view_predictor_head", "roi_heads.caption_view_predictor")] = model_dict.pop(k)
-            
-    print(list(checkpoint["model"].keys()))
+                
     model.load_state_dict(checkpoint["model"], strict=True)
 
     if verbose and "results_on_val" in checkpoint.keys():

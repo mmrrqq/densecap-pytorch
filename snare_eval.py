@@ -15,7 +15,7 @@ from utils.snare_dataset import SnareDataset
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 # device = torch.device("cpu")
-VIEW_HEAD_LR = 1e-3
+REGION_VIEW_HEAD_LR = 1e-3
 CAP_LR = 1e-5
 LR = 1e-4
 WEIGHT_DECAY = 0
@@ -26,22 +26,25 @@ def get_args():
     """Build argparser for training and evaluation configuration."""
     parser = argparse.ArgumentParser()    
 
-    parser.add_argument("--model-prefix", default=time.time())
-    parser.add_argument("--params-path", default="model_params")
-    parser.add_argument("--model-name")
-    parser.add_argument("--test-view", action="store_true", default=False)
-    parser.add_argument("--test-categories", action="store_true", default=False)
-    parser.add_argument("--test-iterations", default=10)
-    parser.add_argument("--train", action="store_true", default=False)
-    parser.add_argument("--alternating", action="store_true", default=False)
+    parser.add_argument("--alternating", action="store_true", default=False, help="Train whole network for the first epoch half, only region view prediction for the second half.")
+    parser.add_argument("--config-path", default="model_params", help="Path of a folder containing the models config.json file")
+    parser.add_argument("--epochs", default=3, help="Max epochs to train.")
+    parser.add_argument("--lookup-tables-path", default="./data/VG-regions-dicts-lite.pkl", help="Path to the pickled look up tables for tokenization created while preprocessing VG.")
     parser.add_argument(
         "--losses",
         nargs="+",
-        default=["view", "multiview", "view_contrastive", "min_cap", "multiview_cap"],
+        default=["v", "mv", "vc", "dcs", "mv_dcs", "cvp"], help="Specify the losses to be included for training. Default value contains all possible losses."
     )
+    parser.add_argument("--model-name", default="Name of the model checkpoint file (excluding '.pth.tar')")
+    parser.add_argument("--model-prefix", default=str(time.time()).split(".")[0], help="Prefix used for model checkpoint saves. Defaults to current timestamp.")
+    parser.add_argument("--params-path", default="model_params", help="Path to the model checkpoint folder.")
+    parser.add_argument("--snare-annotations-path", default="../snare/amt/folds_adversarial", help="Path to the SNARE annotation files.")
+    parser.add_argument("--snare-screenshots-path", default="../snare/data/screenshots", help="Path to the SNARE/ShapeNetSem model screenshots.")
+    parser.add_argument("--test-categories", action="store_true", default=False, help="Compare the models performance on SNARE object categories.")
+    parser.add_argument("--test-view-iterations", default=10, help="Iterations to test when '--test-view' is specified.")
+    parser.add_argument("--test-view", action="store_true", default=False, help="Test random vs. predicted vantage point performance.")
+    parser.add_argument("--train", action="store_true", default=False, help="Train/Finetune the model on the SNARE training dataset")
 
-    parser.add_argument("--snare-annotations-path", default="../snare/amt/folds_adversarial")
-    parser.add_argument("--snare-screenshots-path", default="../snare/data/screenshots")
 
     return parser.parse_args()
 
@@ -75,7 +78,7 @@ def fine_tune(
                     for name, para in model.named_parameters()
                     if para.requires_grad
                     and "box_describer" not in name
-                    and "view_head" not in name
+                    and "region_view_head" not in name
                     and "view_predictor_head" not in name
                 ),
                 "name": "base",
@@ -92,11 +95,11 @@ def fine_tune(
             {
                 "params": (
                     para
-                    for para in model.roi_heads.view_head.parameters()
+                    for para in model.roi_heads.region_view_head.parameters()
                     if para.requires_grad
                 ),
-                "lr": VIEW_HEAD_LR,
-                "name": "view_head",
+                "lr": REGION_VIEW_HEAD_LR,
+                "name": "region_view_head",
             },
             {
                 "params": (
@@ -104,7 +107,7 @@ def fine_tune(
                     for para in model.roi_heads.view_predictor_head.parameters()
                     if para.requires_grad
                 ) if not args.alternating else (),
-                "lr": VIEW_HEAD_LR,
+                "lr": REGION_VIEW_HEAD_LR,
                 "name": "view_prediction_head",
             }
         ],
@@ -122,7 +125,7 @@ def fine_tune(
                 )
             }
         ],
-        lr=VIEW_HEAD_LR        
+        lr=REGION_VIEW_HEAD_LR        
     ) if args.alternating else None
 
     iter_count = iter_offset
@@ -224,14 +227,14 @@ def test_model_categories(model: DenseCapModel, data_loader: DataLoader) -> Dict
                 if not category_accuracy_dict.get(cat):
                     category_accuracy_dict[cat] = {
                         "n": 0,
-                        "cap_min": 0,
+                        "dcs": 0,
                         "cap_mean": 0,
                         "cap_min_per_view_mean": 0
                     }
                 category_accuracy_dict[cat]["n"] += 1
 
-                if losses2["cap_min"] > losses1["cap_min"]:
-                    category_accuracy_dict[cat]["cap_min"] += 1
+                if losses2["dcs"] > losses1["dcs"]:
+                    category_accuracy_dict[cat]["dcs"] += 1
 
                 if losses2["cap_mean"] > losses1["cap_mean"]:
                     category_accuracy_dict[cat]["cap_mean"] += 1
@@ -291,7 +294,7 @@ def test(model: DenseCapModel, data_loader: DataLoader) -> Dict[str, float]:
             
             # collect correct assignments
             n += 1
-            if losses2["cap_min"] > losses1["cap_min"]:
+            if losses2["dcs"] > losses1["dcs"]:
                 min_pos += 1
 
             if losses2["cap_mean"] > losses1["cap_mean"]:
@@ -411,17 +414,17 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
                 best_view_losses2, random_losses2, (rnd_view_id2, rnd_view_caption2, best_view_caption2) = view_predict(model, key2_imgs, annotation, best_view_id)
                 
                 n += 1
-                if best_view_losses2["cap_min"] > best_view_losses1["cap_min"]:
+                if best_view_losses2["dcs"] > best_view_losses1["dcs"]:
                     pred_pos += 1
 
-                if random_losses2["cap_min"] > random_losses1["cap_min"]:
+                if random_losses2["dcs"] > random_losses1["dcs"]:
                     random_pos += 1
 
                 best_view_pred1 = best_view_losses1['view_preds'].cpu().item()
                 best_view_pred2 = best_view_losses2['view_preds'].cpu().item()
                 random_view_pred1 = random_losses1['view_preds'].cpu().item()
                 random_view_pred2 = random_losses2['view_preds'].cpu().item()
-                # if rnd_view_id1 == random_view_pred1 and best_view_pred1 == best_view_id and not random_losses2["cap_min"] > random_losses1["cap_min"] and best_view_losses2["cap_min"] > best_view_losses1["cap_min"]:
+                # if rnd_view_id1 == random_view_pred1 and best_view_pred1 == best_view_id and not random_losses2["dcs"] > random_losses1["dcs"] and best_view_losses2["dcs"] > best_view_losses1["dcs"]:
                 print(f"{annotation} view: {rnd_view_id1} (pred: {random_view_pred1}) best view: {best_view_id} (pred {best_view_pred1}); id: {key1} ")                    
                 print(f"distractor id: {key2}")
                 print_decode_caption(rnd_view_caption1, model.idx_to_token)
@@ -452,20 +455,18 @@ def test_view_prediction(model: DenseCapModel, data_loader: DataLoader, iteratio
 def fine_tune_loop(args):
     """Setup and loop the fine tuning.
     """
-    print(args.losses)
-    lut_path = Path("./data/VG-regions-dicts-lite.pkl")
+    print(args.losses)    
 
-    with open(lut_path, "rb") as f:
+    with open(args.lookup_tables_path, "rb") as f:
         look_up_tables = pickle.load(f)
     
     token_to_idx = look_up_tables["token_to_idx"]
     idx_to_token = look_up_tables["idx_to_token"]
 
-    params_path = Path("compute_model_params")
-    model_name = "without_aux"
+    params_path = Path(args.params_path)    
     model = load_model(
-        params_path / model_name / "config.json",
-        params_path / (model_name + ".pth.tar"),
+        params_path / args.model_name / "config.json",
+        params_path / (args.model_name + ".pth.tar"),
         return_features=False,
         losses=args.losses,
     )
@@ -485,7 +486,7 @@ def fine_tune_loop(args):
     
     train_loader = DataLoader(train_set, batch_size=1, shuffle=True)
 
-    for epoch in range(3):
+    for epoch in range(args.epochs):
         print(f"start epoch {epoch}")
 
         iter_count = fine_tune(model, train_loader, iter_count, writer, args)
@@ -503,9 +504,7 @@ def fine_tune_loop(args):
 
 
 def eval_model(args):
-    lut_path = Path("./data/VG-regions-dicts-lite.pkl")
-
-    with open(lut_path, "rb") as f:
+    with open(args.lookup_tables_path, "rb") as f:
         look_up_tables = pickle.load(f)
     
     token_to_idx = look_up_tables["token_to_idx"]
@@ -528,7 +527,7 @@ def eval_model(args):
     test_loader = DataLoader(test_set, batch_size=1)    
 
     if args.test_view:
-        test_view_prediction(model, test_loader, iterations=args.test_iterations)
+        test_view_prediction(model, test_loader, iterations=args.test_view_iterations)
     elif args.test_categories:
         test_model_categories(model, test_loader)
     else:
@@ -538,6 +537,10 @@ def eval_model(args):
 
 def main():
     args = get_args()
+
+    if args.model_name is None:
+        exit("please specify a model name")
+
     if args.train:
         fine_tune_loop(args)
     else:

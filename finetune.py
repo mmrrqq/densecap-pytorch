@@ -21,7 +21,7 @@ IMG_DIR_ROOT = '../3-dance/datasets/vg'
 VG_DATA_PATH = './data/VG-regions-lite.h5'
 LOOK_UP_TABLES_PATH = './data/VG-regions-dicts-lite.pkl'
 BATCH_SIZE = 8
-VIEW_HEAD_LR = 1e-3
+REGION_VIEW_HEAD_LR = 1e-3
 CAP_LR = 1e-5
 LR = 1e-6
 WEIGHT_DECAY = 0
@@ -42,11 +42,11 @@ def main():
 
     model.to(device)
     optimizer = torch.optim.Adam([{'params': (para for name, para in model.named_parameters()
-                                                if para.requires_grad and 'box_describer' not in name and 'view_head' not in name)},
+                                                if para.requires_grad and 'box_describer' not in name and 'region_view_head' not in name)},
                                     {'params': (para for para in model.roi_heads.box_describer.parameters()
                                                 if para.requires_grad), 'lr': CAP_LR},
-                                    {'params': (para for para in model.roi_heads.view_head.parameters()
-                                                if para.requires_grad), 'lr': VIEW_HEAD_LR}],
+                                    {'params': (para for para in model.roi_heads.region_view_head.parameters()
+                                                if para.requires_grad), 'lr': REGION_VIEW_HEAD_LR}],
                                     lr=LR, weight_decay=WEIGHT_DECAY)    
 
     iter_counter = 0

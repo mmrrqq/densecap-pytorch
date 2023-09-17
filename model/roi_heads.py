@@ -14,12 +14,20 @@ MULTIVIEW_LOSS_FACTOR = 0.1
 
 
 class Loss(Enum):
-    """Enum for the implemented fine tuning losses"""
-    VIEW = 0
-    MULTIVIEW = 1
-    VIEW_CONTRASTIVE = 2
-    MIN_CAP = 3
-    MULTIVIEW_CAP = 4
+    """Enum for the implemented fine tuning losses.
+    V -> Region View prediction.
+    MV -> Multi-View feature alignment.
+    VC -> View Contrastive.
+    DCS -> Distant Caption Supervision.
+    MV_DCS -> Multi-View Distant Caption Supervision.
+    CVP -> Caption View Prediction.
+    """
+    V = 0
+    MV = 1
+    VC = 2
+    DCS = 3
+    MV_DCS = 4
+    CVP = 5
 
 
 def detect_loss(class_logits, box_regression, labels, regression_targets):
@@ -161,16 +169,18 @@ class DenseCapRoIHeads(nn.Module):
 
         # this defines the losses to be fine tuned
         self.losses = [
-            Loss.VIEW
-            if l == "view"
-            else Loss.MULTIVIEW
-            if l == "multiview"
-            else Loss.VIEW_CONTRASTIVE
-            if l == "view_contrastive"
-            else Loss.MIN_CAP
-            if l == "min_cap"
-            else Loss.MULTIVIEW_CAP
-            if l == "multiview_cap"
+            Loss.V
+            if l == "v"
+            else Loss.MV
+            if l == "mv"
+            else Loss.VC
+            if l == "vc"
+            else Loss.DCS
+            if l == "dcs"
+            else Loss.MV_DCS
+            if l == "mv_dcs"
+            else Loss.CVP
+            if l == "cvp"
             else None
             for l in losses
         ]
@@ -534,7 +544,8 @@ class DenseCapRoIHeads(nn.Module):
         target_view,
     ):
         """
-        Gather fine tuning losses. Output depends on the losses set to fine tune in :self.losses."""
+        Gather fine tuning losses. Output depends on the losses set to fine tune in :self.losses.
+        """
         loss_caption = query_caption_loss(caption_predicts, target_embeddings)
 
         box_mean_caption_loss = loss_caption.mean(dim=1)
@@ -569,9 +580,35 @@ class DenseCapRoIHeads(nn.Module):
 
         sentence_embedding = h[0]
         view_caption_prediction = self.caption_view_predictor(sentence_embedding)
-        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()
+        min_view_id = box_mean_caption_loss[min_loss_index_per_view].argmin()        
 
-        if self.training:
+        view_predicts = self.region_view_head(box_features[min_loss_index_per_view])
+        gt_views = [
+            v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
+        ]
+        gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[
+            min_loss_index_per_view
+        ]
+
+        if not self.training:
+            _, view_predicts = view_predicts.max(dim=1)
+            _, view_caption_predicts = view_caption_prediction.max(dim=1)
+
+            loss_dict["dcs"] = box_mean_caption_loss[min_loss_index]
+            loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[
+                min_loss_index_per_view
+            ].mean()
+            loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[
+                min_loss_index_per_view
+            ].std()
+            loss_dict["view_preds"] = view_predicts
+            loss_dict["view_cap_preds"] = view_caption_predicts
+            loss_dict["cap_min_view"] = min_view_id
+            loss_dict["mean_loss_view_id"] = min_mean_loss_view_id
+
+            return None, loss_dict, min_loss_index, min_loss_index_per_view
+        
+        if Loss.CVP in self.losses:
             log_view_caption_prediction = F.log_softmax(view_caption_prediction, dim=1)
             # TODO: alternatively, create distribution once and roll array.
             min_view_distribution = torch.zeros(
@@ -586,44 +623,17 @@ class DenseCapRoIHeads(nn.Module):
                 min_view_distribution,
                 reduction="batchmean",
             )
-        # END SENTENCE EMBEDDING
 
-        view_predicts = self.region_view_head(box_features[min_loss_index_per_view])
-        gt_views = [
-            v.expand(n_boxes) for n_boxes, v in zip(boxes_per_image, target_view)
-        ]
-        gt_views = torch.cat(gt_views, 0).to(view_predicts.device)[
-            min_loss_index_per_view
-        ]
-
-        if not self.training:
-            _, view_predicts = view_predicts.max(dim=1)
-            _, view_caption_predicts = view_caption_prediction.max(dim=1)
-
-            loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
-            loss_dict["cap_min_per_view_mean"] = box_mean_caption_loss[
-                min_loss_index_per_view
-            ].mean()
-            loss_dict["cap_min_per_view_std"] = box_mean_caption_loss[
-                min_loss_index_per_view
-            ].std()
-            loss_dict["view_preds"] = view_predicts
-            loss_dict["view_cap_preds"] = view_caption_predicts
-            loss_dict["cap_min_view"] = min_view_id
-            loss_dict["mean_loss_view_id"] = min_mean_loss_view_id
-
-            return None, loss_dict, min_loss_index, min_loss_index_per_view
-
-        if Loss.MIN_CAP in self.losses:
-            loss_dict["cap_min"] = box_mean_caption_loss[min_loss_index]
+        if Loss.DCS in self.losses:
+            loss_dict["dcs"] = box_mean_caption_loss[min_loss_index]
 
         # TODO: changed from sum to mean, prob. need to retrain..
-        if Loss.MULTIVIEW_CAP in self.losses:
-            loss_dict["multiview_cap"] = box_mean_caption_loss[
+        if Loss.MV_DCS in self.losses:
+            loss_dict["mv_dcs"] = box_mean_caption_loss[
                 min_loss_index_per_view
             ].mean()
 
-        if Loss.VIEW in self.losses:
+        if Loss.V in self.losses:
             log_view_prediction = F.log_softmax(view_predicts, dim=1)
 
             min_view_distribution = torch.zeros(
@@ -639,37 +649,37 @@ class DenseCapRoIHeads(nn.Module):
                 min_view_distribution[i, (view + 1) % 8] = 0.125
                 min_view_distribution[i] /= min_view_distribution[i].sum()
 
-            loss_dict["view"] = F.kl_div(
+            loss_dict["v"] = F.kl_div(
                 log_view_prediction, min_view_distribution, reduction="batchmean"
             )
-            # loss_dict["view"] = predict_view_loss(view_predicts, gt_views)
+            # loss_dict["v"] = predict_view_loss(view_predicts, gt_views)
 
-        if Loss.MULTIVIEW in self.losses or Loss.VIEW_CONTRASTIVE in self.losses:
+        if Loss.MV in self.losses or Loss.VC in self.losses:
             view_features = box_features[min_loss_index_per_view]
             view_features = F.normalize(
                 torch.flatten(view_features, start_dim=1), dim=1
             )
             similarity = view_features @ view_features.T
 
-            if Loss.MULTIVIEW in self.losses:
+            if Loss.MV in self.losses:
                 targets = torch.full_like(
                     similarity, 1, dtype=float, device=self.device
                 )
-                loss_dict["multiview"] = F.cross_entropy(similarity, targets)
+                loss_dict["mv"] = F.cross_entropy(similarity, targets)
 
-            if Loss.VIEW_CONTRASTIVE in self.losses:
+            if Loss.VC in self.losses:
                 pseudo_labels = torch.arange(
                     view_features.shape[0], device=self.device, dtype=torch.long
                 )
                 loss_x = F.cross_entropy(similarity, pseudo_labels)
 
-                loss_dict["view_contrastive"] = loss_x
+                loss_dict["vc"] = loss_x
 
         # scale caption and multiview losses
         for key, value in loss_dict.items():
-            if key == "multiview_cap" or key == "cap_min":
+            if key == "mv_dcs" or key == "dcs":
                 loss_dict[key] = CAPTION_LOSS_FACTOR * value
-            if key == "multiview":
+            if key == "mv":
                 loss_dict[key] = MULTIVIEW_LOSS_FACTOR * value
 
         total_loss = torch.zeros((), device=self.device)
