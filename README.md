@@ -5,34 +5,56 @@ We use python 3.8 for our experiments, other version may work.
 1. If you like, create a python environment and activate it, for example using conda: `conda create -n dnscp python=3.8 && conda activate dnscp`
 2. Install the dependencies using pip and the provided requirements file by running: `pip install -r requirements.txt`
 ### Data
-Get snare and screenshots data, set the `--snare-annotations-path` and `snare-screenshots-path` arguments respectively.
+For the SNARE evaluation, the fold information and model screenshots are needed.
+The training and validation folds are defined in [this link](https://github.com/snaredataset/snare) repository which per default should be cloned in the parent directory to '../'. The ShapeNetSem screenshot data can be retrieved from [this link](https://shapenet.cs.stanford.edu/shapenet/obj-zip/ShapeNetSem.v0/models-screenshots.zip) and by default should be extracted to `../snare/data/`.
+If your configuration varies, just set the `--snare-annotations-path` and `snare-screenshots-path` arguments respectively.
 
 ## Pre training
 Please see the original README below for training on Visual Genome. We provide a pre trained version here (WO LINK?)
-## Fine tuning
-Fine tuning is started using the `snare_eval.py` script. 
-```
-usage: snare_eval.py [-h] [--model-prefix MODEL_PREFIX] [--params-path PARAMS_PATH] [--model-name MODEL_NAME] [--test-view] [--test-iterations TEST_ITERATIONS] [--train] [--alternating]
-                     [--losses LOSSES [LOSSES ...]]
+The pre-trained version includes a model checkpoint `<name>.pth.tar`, a `config.json` and the preprocessed data, containing the token dictionaries in `VG-regions-dicts-lite.pkl` which we will use for finetuning.
+## Fine tuning on SNARE
+Fine tuning is started using the `snare_eval.py` script by providing the `--train` argument flag. The following arguments are relevant for fine tuning:
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --model-prefix MODEL_PREFIX
-  --params-path PARAMS_PATH
-  --model-name MODEL_NAME
-  --test-view
-  --test-iterations TEST_ITERATIONS
-  --train
-  --alternating
+```
+  --alternating         Train whole network for the first epoch half, only region view prediction for the second half.
+                        (default: False)
+  --config-path CONFIG_PATH
+                        Path of a folder containing the models config.json file (default: model_params)
+  --epochs EPOCHS       Max epochs to train. (default: 3)
+  --lookup-tables-path LOOKUP_TABLES_PATH
+                        Path to the pickled look up tables for tokenization created while preprocessing VG. (default:
+                        ./data/VG-regions-dicts-lite.pkl)
   --losses LOSSES [LOSSES ...]
+                        Specify the losses to be included for training. Default value contains all possible losses.
+                        (default: ['v', 'mv', 'vc', 'dcs', 'mv_dcs', 'cvp'])
+  --model-name MODEL_NAME
+  --model-prefix MODEL_PREFIX
+                        Prefix used for model checkpoint saves. Defaults to current timestamp. (default: 1694945456)
+  --params-path PARAMS_PATH
+                        Path to the model checkpoint folder. (default: model_params)
+  --snare-annotations-path SNARE_ANNOTATIONS_PATH
+                        Path to the SNARE annotation files. (default: ../snare/amt/folds_adversarial)
+  --snare-screenshots-path SNARE_SCREENSHOTS_PATH
+                        Path to the SNARE/ShapeNetSem model screenshots. (default: ../snare/data/screenshots)  
+  --train               Train/Finetune the model on the SNARE training dataset (default: False)
 ```
 
+## Evaluation on SNARE
+When ommitting the `--train` flag, the SNARE reference resolution task is evaluated on the validation set per default. In addition to the arguments listed above, other evaluation metrics can be started using the arguments listed below:
+
+```
+--test-categories     Compare the models performance on SNARE object categories. (default: False)
+--test-view-iterations TEST_VIEW_ITERATIONS
+                      Iterations to test when '--test-view' is specified. (default: 10)
+--test-view           Test random vs. predicted vantage point performance. (default: False)
+```
+### Hardware
 Fine tuning was performed on an NVIDIA P100 16GB while the SNARE inference also was able to run on NVIDIA GTX 1060 6GB.
 
-==================================================================================================================
-below is the original README from the upstream repository.
-==================================================================================================================
 
+==========================================================
+below is the original README from the upstream repository.
+==========================================================
 
 
 # Densecap in Pytorch

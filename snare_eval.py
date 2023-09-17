@@ -24,7 +24,7 @@ ACCUMULATE_BATCH_SIZE = 64
 
 def get_args():
     """Build argparser for training and evaluation configuration."""
-    parser = argparse.ArgumentParser()    
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("--alternating", action="store_true", default=False, help="Train whole network for the first epoch half, only region view prediction for the second half.")
     parser.add_argument("--config-path", default="model_params", help="Path of a folder containing the models config.json file")
