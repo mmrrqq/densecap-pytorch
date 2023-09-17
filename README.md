@@ -70,7 +70,7 @@ Fine tuning was performed on an NVIDIA P100 16GB while the SNARE inference also 
 
 ---
 
-### below is the original README from the upstream repository.
+### below is the original README from the [upstream repository](https://github.com/soloist97/densecap-pytorch).
 
 ---
 

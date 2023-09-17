@@ -1,7 +1,10 @@
 baseline -> without_aux
 min_cap -> 1692539407.659011_min_acc_min_cap
+
 min_cap_view -> 1692539431.9839504_min_acc_min_cap_view
+
 view_contrastive -> 1692800777.0677733_min_acc_min_cap_view_contrastive
+
 multiview_cap -> 1692800780.1965835_mean_acc_min_cap_multiview_cap
 multiview_cap_view -> 1693415107.6382463_min_acc_min_cap_multiview_cap_view
 multiview_view -> 1693820974.163681_mean_acc_min_cap_multiview_view
